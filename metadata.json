@@ -1,0 +1,5 @@
+{
+  "name": "DataFlow Reporter",
+  "description": "A powerful data reporting platform allowing users to define data source schemas, build complex relational reports with filtering and grouping, and visualize data via tables and charts using generative AI for data simulation.",
+  "requestFramePermissions": []
+}

@@ -5,12 +5,18 @@ import { DataSource, ReportConfig, TableDef } from "../types";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 // Helper to get API key safely
+// Prefer Vite runtime env var `import.meta.env.VITE_GEMINI_API_KEY` when running in the browser.
+// Fall back to `process.env.API_KEY` which can be set in Node environments (tests/CI).
 const getApiKey = () => {
-  const key = process.env.API_KEY;
+  // Use import.meta.env when available (Vite client builds)
+  // `import.meta` can be typed differently across environments, so use `any` here.
+  const viteKey = (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_GEMINI_API_KEY : undefined) || '';
+  const nodeKey = process.env.API_KEY || '';
+  const key = viteKey || nodeKey;
   if (!key) {
-    console.error("API_KEY is missing from environment variables");
+    console.error("Gemini API key not found. Set VITE_GEMINI_API_KEY in .env.local for local dev or set API_KEY in the Node environment.");
   }
-  return key || '';
+  return key;
 };
 
 export const generateReportData = async (

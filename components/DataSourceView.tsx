@@ -155,6 +155,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                 <option value="postgres">PostgreSQL</option>
                                 <option value="mysql">MySQL</option>
                                 <option value="snowflake">Snowflake</option>
+                                <option value="sql">Microsoft SQL</option>
                                 <option value="custom">Custom / AI Generated</option>
                             </select>
                         </div>

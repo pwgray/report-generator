@@ -33,6 +33,10 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
     const start = performance.now();
 
     try {
+        console.log('[ReportViewer] Starting fetchData');
+        console.log('[ReportViewer] DataSource:', dataSource ? { id: dataSource.id, name: dataSource.name, type: dataSource.type, tablesCount: (dataSource.tables || []).length, viewsCount: (dataSource.views || []).length } : 'NO DATASOURCE');
+        console.log('[ReportViewer] Report:', { id: report.id, name: report.name, selectedColumnsCount: report.selectedColumns?.length || 0 });
+        
         // If datasource is an AI datasource (custom), use AI only
         const isAiDatasource = dataSource?.type === 'custom';
 
@@ -61,16 +65,64 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
         }
 
         const tableIds = Array.from(new Set(report.selectedColumns.map(c => c.tableId)));
+        console.log('[ReportViewer] Detected table/view IDs:', tableIds);
+        console.log('[ReportViewer] Selected columns:', report.selectedColumns);
+        
+        // Group columns by tableId to see which columns belong to which ID
+        const columnsByTableId = report.selectedColumns.reduce((acc, col) => {
+            if (!acc[col.tableId]) acc[col.tableId] = [];
+            acc[col.tableId].push(col.columnId);
+            return acc;
+        }, {} as Record<string, string[]>);
+        console.log('[ReportViewer] Columns grouped by table/view ID:', columnsByTableId);
+        
         if (tableIds.length !== 1) {
-            setError('Live data fetch supports reports which select columns from a single table only.');
-            setData([]);
-            return;
+            console.error('[ReportViewer] Multiple tables/views detected:', tableIds);
+            
+            // Check if all IDs point to the same view (by name)
+            const allTableViewNames = tableIds.map(id => {
+                let item = (dataSource.tables || []).find(t => t.id === id);
+                if (!item) item = (dataSource.views || []).find(v => v.id === id);
+                return item ? item.name : 'UNKNOWN';
+            });
+            console.log('[ReportViewer] Table/View names for these IDs:', allTableViewNames);
+            
+            // If all names are the same, it's a duplicate ID issue - try to fix it
+            const uniqueNames = Array.from(new Set(allTableViewNames));
+            if (uniqueNames.length === 1 && uniqueNames[0] !== 'UNKNOWN') {
+                console.warn('[ReportViewer] All columns are from the same view but have different IDs. Attempting to use the first valid ID...');
+                // Continue with just the first ID - we'll handle this below
+            } else {
+                setError(`Live data fetch supports reports which select columns from a single table or view only. Found ${tableIds.length} different sources: ${allTableViewNames.join(', ')}`);
+                setData([]);
+                return;
+            }
         }
 
-        const tableId = tableIds[0];
-        const table = (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId);
+        console.log('[ReportViewer] Available tables:', (dataSource.tables || []).map(t => ({ id: t.id, name: t.name })));
+        console.log('[ReportViewer] Available views:', (dataSource.views || []).map(v => ({ id: v.id, name: v.name })));
+        
+        // Try to find the table/view using any of the IDs (in case of duplicate IDs from same view)
+        let table = null;
+        let isView = false;
+        let foundTableId = null;
+        
+        for (const tableId of tableIds) {
+            console.log('[ReportViewer] Looking for table/view with ID:', tableId);
+            table = (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId);
+            if (!table) {
+                table = (dataSource.views || []).find(v => v.id === tableId || v.name === tableId);
+                isView = !!table;
+            }
+            if (table) {
+                foundTableId = tableId;
+                console.log('[ReportViewer] Found table/view:', { id: table.id, name: table.name, isView });
+                break;
+            }
+        }
+        
         if (!table || table.exposed === false) {
-            setError('Target table not found or not exposed in datasource.');
+            setError(`Target ${isView ? 'view' : 'table'} not found or not exposed in datasource. Looking for IDs: ${tableIds.join(', ')}`);
             setData([]);
             return;
         }
@@ -80,12 +132,22 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
         for (const rc of report.selectedColumns) {
             const col = (table.columns || []).find((cc: any) => cc.id === rc.columnId || cc.name === rc.columnId);
             if (!col) {
-                setError(`Column ${rc.columnId} not found on table ${table.name}.`);
+                console.warn(`[ReportViewer] Column ${rc.columnId} not found on ${isView ? 'view' : 'table'} ${table.name} (trying by column name)`);
+                // Try to find by column name from the report
+                const colByName = (table.columns || []).find((cc: any) => cc.name === rc.columnId);
+                if (colByName) {
+                    console.log(`[ReportViewer] Found column by name: ${colByName.name}`);
+                    cols.push(colByName.name);
+                    continue;
+                }
+                setError(`Column ${rc.columnId} not found on ${isView ? 'view' : 'table'} ${table.name}.`);
                 setData([]);
                 return;
             }
             cols.push(col.name);
         }
+        
+        console.log('[ReportViewer] Resolved column names:', cols);
 
         // Execute live fetch
         // Always send the full datasource object so the server can run ad-hoc queries
@@ -135,10 +197,13 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
       const reportCol = report.selectedColumns?.find(rc => rc.columnId === simpleName || rc.columnId === fieldName);
       if (reportCol?.alias) return reportCol.alias;
 
-      // Search the current datasource schema
+      // Search the current datasource schema (tables and views)
       const tableIds = Array.from(new Set(report.selectedColumns.map(c => c.tableId)));
       const tableId = tableIds.length === 1 ? tableIds[0] : undefined;
-      const table = dataSource && tableId ? (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId) : undefined;
+      let table = dataSource && tableId ? (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId) : undefined;
+      if (!table && dataSource && tableId) {
+          table = (dataSource.views || []).find(v => v.id === tableId || v.name === tableId);
+      }
       if (table) {
           const col = (table.columns || []).find((cc: any) => cc.name === simpleName || cc.id === simpleName || (`${table.name}.${cc.name}`) === fieldName);
           if (col && col.alias) return col.alias;

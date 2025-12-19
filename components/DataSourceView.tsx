@@ -147,6 +147,24 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
     setFormData({...formData, tables: newTables});
   }
 
+  const updateViewMetadata = (id: string, field: 'alias' | 'description', value: string) => {
+      const newViews = formData.views?.map(v => 
+          v.id === id ? { ...v, [field]: value } : v
+      );
+      setFormData({...formData, views: newViews});
+  }
+
+  const updateViewColumnMetadata = (viewId: string, colId: string, field: 'alias' | 'description' | 'sampleValue', value: string) => {
+    const newViews = formData.views?.map(v => {
+        if (v.id !== viewId) return v;
+        return {
+            ...v,
+            columns: v.columns.map(c => c.id === colId ? { ...c, [field]: value } : c)
+        }
+    });
+    setFormData({...formData, views: newViews});
+  }
+
   if (isEditing) {
     return (
       <div className="space-y-6 animate-fade-in pb-10">
@@ -366,6 +384,18 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                                                 <Badge color="blue" className="text-xs">VIEW</Badge>
                                                             </div>
                                                         </div>
+                                                        
+                                                        <div className="flex items-center gap-3 w-full md:w-auto">
+                                                            <div className="flex-1 md:w-48">
+                                                                <input 
+                                                                    className="w-full px-2 py-1 text-sm border border-blue-300 rounded bg-white" 
+                                                                    placeholder="Friendly Alias" 
+                                                                    value={view.alias || ''}
+                                                                    onChange={(e) => updateViewMetadata(view.id, 'alias', e.target.value)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                />
+                                                            </div>
+                                                        </div>
                                                     </div>
 
                                                     {/* View Body (Columns) */}
@@ -373,10 +403,20 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                                         <div className="p-4 border-t border-blue-200 bg-white">
                                                             {view.definition && (
                                                                 <div className="mb-4">
-                                                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">View Definition</label>
+                                                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">View Definition (Read-Only)</label>
                                                                     <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto max-h-32">{view.definition}</pre>
                                                                 </div>
                                                             )}
+                                                            
+                                                            <div className="mb-4">
+                                                                <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Description</label>
+                                                                <input 
+                                                                    className="w-full px-3 py-2 text-sm border border-blue-300 rounded" 
+                                                                    placeholder="Description for report users..." 
+                                                                    value={view.description || ''}
+                                                                    onChange={(e) => updateViewMetadata(view.id, 'description', e.target.value)}
+                                                                />
+                                                            </div>
 
                                                             <div className="overflow-x-auto">
                                                                 <table className="min-w-full divide-y divide-gray-200">
@@ -384,7 +424,9 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                                                         <tr>
                                                                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Column Name</th>
                                                                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nullable</th>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-48">Alias</th>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-64">Description</th>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sample</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody className="bg-white divide-y divide-gray-200">
@@ -392,7 +434,31 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                                                             <tr key={col.id}>
                                                                                 <td className="px-3 py-2 text-sm font-medium text-gray-900">{col.name}</td>
                                                                                 <td className="px-3 py-2 text-xs text-gray-500 font-mono">{col.type}</td>
-                                                                                <td className="px-3 py-2 text-xs text-gray-500">{col.isNullable ? 'Yes' : 'No'}</td>
+                                                                                <td className="px-3 py-2">
+                                                                                    <input 
+                                                                                        className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500" 
+                                                                                        value={col.alias || ''}
+                                                                                        placeholder={col.name}
+                                                                                        onChange={(e) => updateViewColumnMetadata(view.id, col.id, 'alias', e.target.value)}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="px-3 py-2">
+                                                                                    <input 
+                                                                                        className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500" 
+                                                                                        value={col.description || ''}
+                                                                                        placeholder="Description..."
+                                                                                        onChange={(e) => updateViewColumnMetadata(view.id, col.id, 'description', e.target.value)}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="px-3 py-2 text-xs text-gray-500 italic truncate max-w-[150px]">
+                                                                                    <input
+                                                                                        className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500 italic text-xs"
+                                                                                        value={col.sampleValue || ''}
+                                                                                        placeholder="sample..."
+                                                                                        onChange={(e) => updateViewColumnMetadata(view.id, col.id, 'sampleValue', e.target.value)}
+                                                                                        onClick={(e) => e.stopPropagation()}
+                                                                                    />
+                                                                                </td>
                                                                             </tr>
                                                                         ))}
                                                                     </tbody>

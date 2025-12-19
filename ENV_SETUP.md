@@ -14,6 +14,7 @@ VITE_API_URL=http://localhost:4000
 VITE_GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
+
 ## Example .env.local File
 
 For local development:

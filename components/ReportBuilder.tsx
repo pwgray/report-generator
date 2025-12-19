@@ -101,6 +101,74 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
       return `${tableLabel}.${colLabel}`;
   };
 
+  // Helper to get column data type
+  const getColumnType = (tableId: string, colId: string): string => {
+      const t = allTablesAndViews.find(t => t.id === tableId);
+      const c = t?.columns.find(c => c.id === colId);
+      return c?.type || 'string';
+  };
+
+  // Get operators based on column data type
+  const getOperatorsForType = (columnType: string) => {
+      switch (columnType) {
+          case 'string':
+              return [
+                  { value: 'equals', label: 'Equals' },
+                  { value: 'not_equals', label: 'Not Equals' },
+                  { value: 'contains', label: 'Contains' },
+                  { value: 'not_contains', label: 'Does Not Contain' },
+                  { value: 'starts_with', label: 'Starts With' },
+                  { value: 'ends_with', label: 'Ends With' },
+                  { value: 'is_empty', label: 'Is Empty' },
+                  { value: 'is_not_empty', label: 'Is Not Empty' },
+                  { value: 'in', label: 'In List' }
+              ];
+          case 'number':
+          case 'currency':
+              return [
+                  { value: 'equals', label: 'Equals' },
+                  { value: 'not_equals', label: 'Not Equals' },
+                  { value: 'gt', label: 'Greater Than' },
+                  { value: 'gte', label: 'Greater Than or Equal' },
+                  { value: 'lt', label: 'Less Than' },
+                  { value: 'lte', label: 'Less Than or Equal' },
+                  { value: 'between', label: 'Between' },
+                  { value: 'is_null', label: 'Is Null' },
+                  { value: 'is_not_null', label: 'Is Not Null' }
+              ];
+          case 'date':
+              return [
+                  { value: 'equals', label: 'On Date' },
+                  { value: 'not_equals', label: 'Not On Date' },
+                  { value: 'gt', label: 'After' },
+                  { value: 'gte', label: 'On or After' },
+                  { value: 'lt', label: 'Before' },
+                  { value: 'lte', label: 'On or Before' },
+                  { value: 'between', label: 'Between Dates' },
+                  { value: 'is_null', label: 'Is Null' },
+                  { value: 'is_not_null', label: 'Is Not Null' },
+                  { value: 'today', label: 'Is Today' },
+                  { value: 'this_week', label: 'This Week' },
+                  { value: 'this_month', label: 'This Month' },
+                  { value: 'this_year', label: 'This Year' }
+              ];
+          case 'boolean':
+              return [
+                  { value: 'equals', label: 'Is' },
+                  { value: 'is_null', label: 'Is Null' },
+                  { value: 'is_not_null', label: 'Is Not Null' }
+              ];
+          default:
+              return [
+                  { value: 'equals', label: 'Equals' },
+                  { value: 'not_equals', label: 'Not Equals' },
+                  { value: 'contains', label: 'Contains' },
+                  { value: 'is_null', label: 'Is Null' },
+                  { value: 'is_not_null', label: 'Is Not Null' }
+              ];
+      }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-100px)]">
       {/* Header */}
@@ -216,19 +284,27 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                 </Button>
                             </div>
                             <div className="space-y-3">
-                                {config.filters.map((filter, idx) => (
+                                {config.filters.map((filter, idx) => {
+                                    const columnType = getColumnType(filter.tableId, filter.columnId);
+                                    const operators = getOperatorsForType(columnType);
+                                    const needsValueInput = !['is_null', 'is_not_null', 'is_empty', 'is_not_empty', 'today', 'this_week', 'this_month', 'this_year'].includes(filter.operator);
+                                    const needsTwoValues = filter.operator === 'between';
+                                    
+                                    return (
                                     <div key={filter.id} className="p-3 bg-gray-50 rounded-md border border-gray-200 space-y-2">
-                                        <div className="flex justify-between">
+                                        <div className="flex justify-between items-center">
                                             <span className="text-xs font-semibold text-gray-500">Filter #{idx + 1}</span>
-                                            <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{columnType}</span>
+                                                <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
+                                            </div>
                                         </div>
+                                        
+                                        {/* Column Selection */}
                                         <select 
                                             className="w-full text-sm border-gray-300 rounded-md"
                                             value={filter.columnId}
                                             onChange={(e) => {
-                                                // Find table id from column id (simplified, assumes unique col ids or look up)
-                                                // In real app, we need to know the table context. 
-                                                // For MVP, we iterate tables to find the col.
                                                 let tid = filter.tableId;
                                                 allTablesAndViews.forEach(t => {
                                                     if(t.columns.find(c => c.id === e.target.value)) tid = t.id;
@@ -242,27 +318,98 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                                 t.columns.map(c => <option key={c.id} value={c.id}>{(t.alias || t.name)}.{(c.alias || c.name)}</option>)
                                             )}
                                         </select>
-                                        <div className="flex space-x-2">
+                                        
+                                        {/* Operator Selection */}
+                                        <div className={needsValueInput ? "flex space-x-2" : ""}>
                                             <select 
-                                                className="w-1/3 text-sm border-gray-300 rounded-md"
+                                                className={`text-sm border-gray-300 rounded-md ${needsValueInput ? 'w-1/3' : 'w-full'}`}
                                                 value={filter.operator}
                                                 onChange={(e) => updateFilter(idx, 'operator', e.target.value)}
                                             >
-                                                <option value="equals">Equals</option>
-                                                <option value="contains">Contains</option>
-                                                <option value="gt">Greater Than</option>
-                                                <option value="lt">Less Than</option>
+                                                {operators.map(op => (
+                                                    <option key={op.value} value={op.value}>{op.label}</option>
+                                                ))}
                                             </select>
-                                            <input 
-                                                className="w-2/3 text-sm border-gray-300 rounded-md p-1"
-                                                placeholder="Value..."
-                                                value={filter.value}
-                                                onChange={(e) => updateFilter(idx, 'value', e.target.value)}
-                                            />
+                                            
+                                            {/* Value Input - Type-specific */}
+                                            {needsValueInput && (
+                                                <>
+                                                    {columnType === 'date' && (
+                                                        <input 
+                                                            type="date"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        />
+                                                    )}
+                                                    {(columnType === 'number' || columnType === 'currency') && (
+                                                        <input 
+                                                            type="number"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            placeholder={columnType === 'currency' ? 'Amount...' : 'Number...'}
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                            step={columnType === 'currency' ? '0.01' : 'any'}
+                                                        />
+                                                    )}
+                                                    {columnType === 'boolean' && (
+                                                        <select
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        >
+                                                            <option value="true">True</option>
+                                                            <option value="false">False</option>
+                                                        </select>
+                                                    )}
+                                                    {columnType === 'string' && (
+                                                        <input 
+                                                            type="text"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            placeholder={filter.operator === 'in' ? 'value1,value2,value3...' : 'Value...'}
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        />
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
+                                        
+                                        {/* Second value for BETWEEN operator */}
+                                        {needsTwoValues && (
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs text-gray-500">and</span>
+                                                {columnType === 'date' && (
+                                                    <input 
+                                                        type="date"
+                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
+                                                        value={filter.value2 || ''}
+                                                        onChange={(e) => {
+                                                            const newFilters = [...config.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
+                                                            setConfig({...config, filters: newFilters});
+                                                        }}
+                                                    />
+                                                )}
+                                                {(columnType === 'number' || columnType === 'currency') && (
+                                                    <input 
+                                                        type="number"
+                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
+                                                        placeholder="Upper bound..."
+                                                        value={filter.value2 || ''}
+                                                        onChange={(e) => {
+                                                            const newFilters = [...config.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
+                                                            setConfig({...config, filters: newFilters});
+                                                        }}
+                                                        step={columnType === 'currency' ? '0.01' : 'any'}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
-                                {config.filters.length === 0 && <p className="text-sm text-gray-500 italic">No filters defined.</p>}
+                                )})}
+                                {config.filters.length === 0 && <p className="text-sm text-gray-500 italic">No filters defined. Add filters to refine your report data.</p>}
                             </div>
                         </div>
 

@@ -96,8 +96,12 @@ export interface FilterCondition {
   id: string;
   tableId: string;
   columnId: string;
-  operator: 'equals' | 'contains' | 'gt' | 'lt' | 'between';
+  operator: 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 
+            'gt' | 'gte' | 'lt' | 'lte' | 'between' | 
+            'is_null' | 'is_not_null' | 'is_empty' | 'is_not_empty' | 
+            'in' | 'today' | 'this_week' | 'this_month' | 'this_year';
   value: string;
+  value2?: string; // For 'between' operator
 }
 
 export interface SortCondition {

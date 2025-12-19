@@ -37,7 +37,7 @@ export const testConnectionAndFetchSchema = async (type: string, connectionDetai
   return result;
 };
 
-export const fetchTableData = async (dataSourceOrId: string | any, table: string, columns: string[], limit = 5000000): Promise<any[]> => {
+export const fetchTableData = async (dataSourceOrId: string | any, table: string, columns: string[], limit = 5000000, filters?: any[]): Promise<any[]> => {
   const buildUrl = (path: string) => {
     if (!apiUrl) return `/${path.replace(/^\//, '')}`;
     const base = apiUrl.replace(/\/+$/, '');
@@ -47,9 +47,10 @@ export const fetchTableData = async (dataSourceOrId: string | any, table: string
 
   const url = buildUrl('/datasources/query');
   if (!apiUrl) console.warn('[datasourceService] VITE_API_URL not set, using relative URL:', url);
-  console.debug('[datasourceService] fetchTableData', { url, dataSourceOrId, table, columns, limit });
+  console.debug('[datasourceService] fetchTableData', { url, dataSourceOrId, table, columns, limit, filters });
 
   const bodyPayload: any = { table, columns, limit };
+  if (filters && filters.length > 0) bodyPayload.filters = filters;
   if (typeof dataSourceOrId === 'string') bodyPayload.dataSourceId = dataSourceOrId;
   else bodyPayload.dataSource = dataSourceOrId;
 

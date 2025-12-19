@@ -30,6 +30,12 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
 
   const selectedDs = dataSources.find(d => d.id === config.dataSourceId);
 
+  // Combine tables and views for selection (views are treated like read-only tables)
+  const allTablesAndViews = selectedDs ? [
+    ...(selectedDs.tables || []),
+    ...(selectedDs.views || [])
+  ] : [];
+
   // If data source changes, clear selections
   const handleDsChange = (dsId: string) => {
     setConfig({
@@ -58,7 +64,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
 
   const addFilter = () => {
     if (!selectedDs) return;
-    const firstTable = selectedDs.tables.find(t => t.exposed);
+    const firstTable = allTablesAndViews.find(t => t.exposed);
     if (!firstTable) return;
     
     setConfig({
@@ -88,7 +94,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
 
   // Helper to find column name (use aliases when available)
   const getColName = (tableId: string, colId: string) => {
-      const t = selectedDs?.tables.find(t => t.id === tableId);
+      const t = allTablesAndViews.find(t => t.id === tableId);
       const c = t?.columns.find(c => c.id === colId);
       const tableLabel = t ? (t.alias || t.name) : tableId;
       const colLabel = c ? (c.alias || c.name) : colId;
@@ -167,11 +173,14 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
 
                         {selectedDs && (
                             <div className="space-y-4">
-                                <h3 className="font-medium text-gray-900">Available Tables & Columns</h3>
-                                {selectedDs.tables.filter(t => t.exposed).map(table => (
-                                    <div key={table.id} className="border rounded-md overflow-hidden">
-                                        <div className="bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 border-b">
-                                            {table.name}
+                                <h3 className="font-medium text-gray-900">Available Tables & Views</h3>
+                                {allTablesAndViews.filter(t => t.exposed).map(table => {
+                                    const isView = selectedDs.views?.some(v => v.id === table.id);
+                                    return (
+                                    <div key={table.id} className={`border rounded-md overflow-hidden ${isView ? 'border-blue-300' : ''}`}>
+                                        <div className={`px-3 py-2 text-sm font-semibold border-b flex items-center justify-between ${isView ? 'bg-blue-50 text-blue-900' : 'bg-gray-50 text-gray-700'}`}>
+                                            <span>{table.name}</span>
+                                            {isView && <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">VIEW</span>}
                                         </div>
                                         <div className="p-2 space-y-1">
                                             {table.columns.map(col => {
@@ -191,7 +200,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                             })}
                                         </div>
                                     </div>
-                                ))}
+                                )})}
                             </div>
                         )}
                     </div>
@@ -221,7 +230,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                                 // In real app, we need to know the table context. 
                                                 // For MVP, we iterate tables to find the col.
                                                 let tid = filter.tableId;
-                                                selectedDs?.tables.forEach(t => {
+                                                allTablesAndViews.forEach(t => {
                                                     if(t.columns.find(c => c.id === e.target.value)) tid = t.id;
                                                 });
                                                 const newFilters = [...config.filters];
@@ -229,7 +238,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                                 setConfig({...config, filters: newFilters});
                                             }}
                                         >
-                                            {selectedDs?.tables.filter(t => t.exposed).flatMap(t => 
+                                            {allTablesAndViews.filter(t => t.exposed).flatMap(t => 
                                                 t.columns.map(c => <option key={c.id} value={c.id}>{(t.alias || t.name)}.{(c.alias || c.name)}</option>)
                                             )}
                                         </select>

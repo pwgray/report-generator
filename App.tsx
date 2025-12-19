@@ -4,6 +4,7 @@ import { DataSourceView } from './components/DataSourceView';
 import { ReportBuilder } from './components/ReportBuilder';
 import { ReportViewer } from './components/ReportViewer';
 import { listDatasources, createDatasource, updateDatasource, deleteDatasource } from './services/datasourceService';
+import { listReports, createReport, updateReport, deleteReport } from './services/reportService';
 import { LayoutDashboard, Database, FileText, Settings, Plus, BarChart3, Users, LogOut, Lock, Globe } from 'lucide-react';
 
 const MOCK_USERS: User[] = [
@@ -19,34 +20,34 @@ const App = () => {
   // User State
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
 
-  // Data State (fetch from backend; fallback to localStorage)
+  // Data State (fetch from backend)
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
-  
-  const [reports, setReports] = useState<ReportConfig[]>(() => {
-      const saved = localStorage.getItem('reports');
-      const parsed = saved ? JSON.parse(saved) : [];
-      // Migration for legacy data
-      return parsed.map((r: any) => ({
-          ...r,
-          ownerId: r.ownerId || MOCK_USERS[0].id,
-          visibility: r.visibility || 'public'
-      }));
-  });
+  const [reports, setReports] = useState<ReportConfig[]>([]);
 
   // Report Filter Tab State
   const [reportFilter, setReportFilter] = useState<'all' | 'mine'>('all');
 
-  // Load datasources from backend on mount
+  // Load datasources and reports from backend on mount
   useEffect(() => {
       (async () => {
+          // Load datasources
           try {
-              const list = await listDatasources();
-              setDataSources(list);
-              console.debug('[App] loaded datasources from API', { count: list.length });
+              const dsList = await listDatasources();
+              setDataSources(dsList);
+              console.debug('[App] loaded datasources from API', { count: dsList.length });
           } catch (e) {
-              console.warn('[App] failed to load datasources from API, falling back to localStorage', e);
-              const saved = localStorage.getItem('dataSources');
-              if (saved) setDataSources(JSON.parse(saved));
+              console.error('[App] failed to load datasources from API', e);
+              alert('Failed to load datasources. Please ensure the server is running.');
+          }
+
+          // Load reports
+          try {
+              const reportsList = await listReports();
+              setReports(reportsList);
+              console.debug('[App] loaded reports from API', { count: reportsList.length });
+          } catch (e) {
+              console.error('[App] failed to load reports from API', e);
+              alert('Failed to load reports. Please ensure the server is running.');
           }
       })();
   }, []);
@@ -54,12 +55,6 @@ const App = () => {
 
   // Selection State
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-
-  // Persistence Effects
-
-  useEffect(() => {
-    localStorage.setItem('reports', JSON.stringify(reports));
-  }, [reports]);
 
   // Handlers
   const handleAddDataSource = async (ds: DataSource) => {
@@ -97,7 +92,7 @@ const App = () => {
       }
   };
 
-  const handleSaveReport = (report: ReportConfig) => {
+  const handleSaveReport = async (report: ReportConfig) => {
     // If it's a new report or I am the owner, I can save
     const existing = reports.find(r => r.id === report.id);
     
@@ -109,15 +104,24 @@ const App = () => {
 
     const reportToSave = {
         ...report,
-        ownerId: existing ? existing.ownerId : currentUser.id // Ensure owner persists or is set
+        ownerId: existing ? existing.ownerId : currentUser.id, // Ensure owner persists or is set
+        created_at: existing ? existing.created_at : new Date().toISOString()
     };
 
-    if (existing) {
-        setReports(reports.map(r => r.id === report.id ? reportToSave : r));
-    } else {
-        setReports([...reports, reportToSave]);
+    try {
+        if (existing) {
+            const updated = await updateReport(report.id, reportToSave);
+            setReports(reports.map(r => r.id === report.id ? updated : r));
+        } else {
+            const created = await createReport(reportToSave);
+            setReports([...reports, created]);
+        }
+        setCurrentView('reports');
+    } catch (e) {
+        console.error('[App] save report failed', e);
+        alert('Failed to save report to server.');
+        throw e;
     }
-    setCurrentView('reports');
   };
 
   const handleViewReport = (id: string) => {
@@ -130,11 +134,18 @@ const App = () => {
       setCurrentView('builder');
   };
 
-  const deleteReport = (id: string) => {
+  const handleDeleteReport = async (id: string) => {
       const report = reports.find(r => r.id === id);
       if (report && (report.ownerId === currentUser.id || currentUser.role === 'admin')) {
           if (confirm('Are you sure you want to delete this report?')) {
-            setReports(reports.filter(r => r.id !== id));
+            try {
+                await deleteReport(id);
+                setReports(reports.filter(r => r.id !== id));
+            } catch (e) {
+                console.error('[App] delete report failed', e);
+                alert('Failed to delete report from server.');
+                throw e;
+            }
           }
       } else {
           alert('You do not have permission to delete this report.');
@@ -326,7 +337,7 @@ const App = () => {
                                             {canEdit && (
                                                 <>
                                                     <button onClick={() => handleEditReport(report.id)} className="text-gray-600 hover:text-gray-900 mr-3">Edit</button>
-                                                    <button onClick={() => deleteReport(report.id)} className="text-red-600 hover:text-red-900">Delete</button>
+                                                    <button onClick={() => handleDeleteReport(report.id)} className="text-red-600 hover:text-red-900">Delete</button>
                                                 </>
                                             )}
                                         </td>

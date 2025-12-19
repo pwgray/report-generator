@@ -23,7 +23,8 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
     name: '',
     description: '',
     type: 'sql',
-    tables: []
+    tables: [],
+    views: []
   });
   const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails>({
       host: 'localhost',
@@ -47,7 +48,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       setActiveTab('schema'); // If editing, go straight to schema
     } else {
       setEditingId(null);
-      setFormData({ name: '', description: '', type: 'sql', tables: [] });
+      setFormData({ name: '', description: '', type: 'sql', tables: [], views: [] });
       setConnectionDetails({ host: 'localhost', port: '1433', database: 'Northwind', username: 'sa', password: '' });
       setActiveTab('connection');
     }
@@ -66,6 +67,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       type: formData.type || 'custom',
       connectionDetails: formData.type !== 'custom' ? connectionDetails : undefined,
       tables: formData.tables || [],
+      views: formData.views || [],
       created_at: editingId ? (formData.created_at || new Date().toISOString()) : new Date().toISOString()
     };
 
@@ -103,8 +105,8 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       } else {
         // Call backend to test connection and fetch real schema
         try {
-          const fetched = await testConnectionAndFetchSchema(formData.type || 'sql', connectionDetails);
-          setFormData(prev => ({ ...prev, tables: fetched }));
+          const { tables, views } = await testConnectionAndFetchSchema(formData.type || 'sql', connectionDetails);
+          setFormData(prev => ({ ...prev, tables: tables || [], views: views || [] }));
           setActiveTab('schema');
         } catch (err) {
           console.error('Test connection failed', err);
@@ -242,7 +244,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                     <Card className="min-h-[500px]">
                         <CardHeader title="Schema Definition">
                              <div className="text-sm text-gray-500">
-                                {formData.tables?.length || 0} tables discovered. Review and enrich metadata.
+                                {formData.tables?.length || 0} tables, {formData.views?.length || 0} views discovered. Review and enrich metadata.
                              </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -344,6 +346,63 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                             )}
                                         </div>
                                     ))}
+                                    
+                                    {/* Views Section */}
+                                    {formData.views && formData.views.length > 0 && (
+                                        <>
+                                            <div className="mt-8 mb-4">
+                                                <h3 className="text-lg font-semibold text-gray-700">Views ({formData.views.length})</h3>
+                                            </div>
+                                            {formData.views.map((view) => (
+                                                <div key={view.id} className="border border-blue-200 rounded-lg overflow-hidden bg-blue-50 shadow-sm">
+                                                    {/* View Header */}
+                                                    <div className="p-4 bg-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                        <div className="flex items-center flex-1 cursor-pointer" onClick={() => setExpandedTableId(expandedTableId === view.id ? null : view.id)}>
+                                                            {expandedTableId === view.id ? <ChevronDown className="w-5 h-5 text-blue-700 mr-2" /> : <ChevronRight className="w-5 h-5 text-blue-700 mr-2" />}
+                                                            <div className="flex items-center space-x-2">
+                                                                <Eye className="w-4 h-4 text-blue-600" />
+                                                                <span className="font-semibold text-blue-900 text-lg">{view.name}</span>
+                                                                <Badge color="blue" className="text-xs">VIEW</Badge>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* View Body (Columns) */}
+                                                    {expandedTableId === view.id && (
+                                                        <div className="p-4 border-t border-blue-200 bg-white">
+                                                            {view.definition && (
+                                                                <div className="mb-4">
+                                                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">View Definition</label>
+                                                                    <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto max-h-32">{view.definition}</pre>
+                                                                </div>
+                                                            )}
+
+                                                            <div className="overflow-x-auto">
+                                                                <table className="min-w-full divide-y divide-gray-200">
+                                                                    <thead className="bg-gray-50">
+                                                                        <tr>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Column Name</th>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                                                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nullable</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                                        {view.columns.map(col => (
+                                                                            <tr key={col.id}>
+                                                                                <td className="px-3 py-2 text-sm font-medium text-gray-900">{col.name}</td>
+                                                                                <td className="px-3 py-2 text-xs text-gray-500 font-mono">{col.type}</td>
+                                                                                <td className="px-3 py-2 text-xs text-gray-500">{col.isNullable ? 'Yes' : 'No'}</td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="text-center py-20 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
@@ -398,7 +457,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                 <div className="space-y-2">
                      <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
                         <span className="flex items-center"><Server className="w-3 h-3 mr-1"/> {ds.type.toUpperCase()}</span>
-                        <span>{ds.tables.length} Tables</span>
+                        <span>{ds.tables.length} Tables{ds.views && ds.views.length > 0 ? `, ${ds.views.length} Views` : ''}</span>
                     </div>
                     {ds.connectionDetails && ds.type !== 'custom' && (
                          <div className="text-xs text-gray-400 font-mono bg-gray-50 p-1.5 rounded truncate">

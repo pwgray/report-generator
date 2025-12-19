@@ -1,4 +1,4 @@
-import { ConnectionDetails, TableDef } from '../types';
+import { ConnectionDetails, TableDef, ViewDef } from '../types';
 
 // Determine API base URL from environment (Vite prefers VITE_ prefix in the browser)
 export const apiUrl = (() => {
@@ -9,7 +9,7 @@ export const apiUrl = (() => {
   return raw.endsWith('/') ? raw.slice(0, -1) : raw;
 })();
 
-export const testConnectionAndFetchSchema = async (type: string, connectionDetails: ConnectionDetails): Promise<TableDef[]> => {
+export const testConnectionAndFetchSchema = async (type: string, connectionDetails: ConnectionDetails): Promise<{ tables: TableDef[], views: ViewDef[] }> => {
     // Build URL safely — prefer configured apiUrl, otherwise use relative path
   const buildUrl = (path: string) => {
     if (!apiUrl) return `/${path.replace(/^\//, '')}`;
@@ -33,8 +33,8 @@ export const testConnectionAndFetchSchema = async (type: string, connectionDetai
     throw new Error(txt || 'Failed to fetch schema');
   }
 
-  const tables = await res.json();
-  return tables;
+  const result = await res.json();
+  return result;
 };
 
 export const fetchTableData = async (dataSourceOrId: string | any, table: string, columns: string[], limit = 5000000): Promise<any[]> => {

@@ -4,6 +4,14 @@ import { DataSource, ReportConfig, TableDef } from "../types";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
+// API base URL (use Vite env VITE_API_URL, fallback to API_URL or process.env)
+export const apiUrl = (() => {
+  const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined) || {};
+  const raw = env?.VITE_API_URL || env?.API_URL || process.env?.API_URL || '';
+  if (!raw) return '';
+  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+})();
+
 // Helper to get API key safely
 // Prefer Vite runtime env var `import.meta.env.VITE_GEMINI_API_KEY` when running in the browser.
 // Fall back to `process.env.API_KEY` which can be set in Node environments (tests/CI).

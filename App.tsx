@@ -3,6 +3,7 @@ import { DataSource, ReportConfig, User } from './types';
 import { DataSourceView } from './components/DataSourceView';
 import { ReportBuilder } from './components/ReportBuilder';
 import { ReportViewer } from './components/ReportViewer';
+import { listDatasources, createDatasource, updateDatasource, deleteDatasource } from './services/datasourceService';
 import { LayoutDashboard, Database, FileText, Settings, Plus, BarChart3, Users, LogOut, Lock, Globe } from 'lucide-react';
 
 const MOCK_USERS: User[] = [
@@ -18,11 +19,8 @@ const App = () => {
   // User State
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
 
-  // Data State (Mock Persistence)
-  const [dataSources, setDataSources] = useState<DataSource[]>(() => {
-      const saved = localStorage.getItem('dataSources');
-      return saved ? JSON.parse(saved) : [];
-  });
+  // Data State (fetch from backend; fallback to localStorage)
+  const [dataSources, setDataSources] = useState<DataSource[]>([]);
   
   const [reports, setReports] = useState<ReportConfig[]>(() => {
       const saved = localStorage.getItem('reports');
@@ -38,22 +36,66 @@ const App = () => {
   // Report Filter Tab State
   const [reportFilter, setReportFilter] = useState<'all' | 'mine'>('all');
 
+  // Load datasources from backend on mount
+  useEffect(() => {
+      (async () => {
+          try {
+              const list = await listDatasources();
+              setDataSources(list);
+              console.debug('[App] loaded datasources from API', { count: list.length });
+          } catch (e) {
+              console.warn('[App] failed to load datasources from API, falling back to localStorage', e);
+              const saved = localStorage.getItem('dataSources');
+              if (saved) setDataSources(JSON.parse(saved));
+          }
+      })();
+  }, []);
+
+
   // Selection State
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
   // Persistence Effects
-  useEffect(() => {
-    localStorage.setItem('dataSources', JSON.stringify(dataSources));
-  }, [dataSources]);
 
   useEffect(() => {
     localStorage.setItem('reports', JSON.stringify(reports));
   }, [reports]);
 
   // Handlers
-  const handleAddDataSource = (ds: DataSource) => setDataSources([...dataSources, ds]);
-  const handleUpdateDataSource = (ds: DataSource) => setDataSources(dataSources.map(d => d.id === ds.id ? ds : d));
-  const handleDeleteDataSource = (id: string) => setDataSources(dataSources.filter(d => d.id !== id));
+  const handleAddDataSource = async (ds: DataSource) => {
+      try {
+          const saved = await createDatasource(ds);
+          setDataSources(prev => [...prev, saved]);
+          return saved;
+      } catch (e) {
+          console.error('[App] create datasource failed', e);
+          alert('Failed to persist datasource to server.');
+          throw e;
+      }
+  };
+
+  const handleUpdateDataSource = async (ds: DataSource) => {
+      try {
+          const updated = await updateDatasource(ds.id, ds);
+          setDataSources(prev => prev.map(d => d.id === updated.id ? updated : d));
+          return updated;
+      } catch (e) {
+          console.error('[App] update datasource failed', e);
+          alert('Failed to update datasource on server.');
+          throw e;
+      }
+  };
+
+  const handleDeleteDataSource = async (id: string) => {
+      try {
+          await deleteDatasource(id);
+          setDataSources(prev => prev.filter(d => d.id !== id));
+      } catch (e) {
+          console.error('[App] delete datasource failed', e);
+          alert('Failed to delete datasource on server.');
+          throw e;
+      }
+  };
 
   const handleSaveReport = (report: ReportConfig) => {
     // If it's a new report or I am the owner, I can save
@@ -183,7 +225,30 @@ const App = () => {
       case 'viewer':
           const r = reports.find(r => r.id === selectedReportId);
           if (!r) return <div>Report not found</div>;
-          return <ReportViewer report={r} dataSource={dataSources.find(d => d.id === r.dataSourceId)} onBack={() => setCurrentView('reports')} />;
+
+          const handleSaveDataSourceFromViewer = async (ds: DataSource) => {
+              // Persist the ephemeral datasource via API and attach to the current report
+              try {
+                  const toSave = {
+                      ...ds,
+                      name: ds.name || 'Untitled Source',
+                      description: ds.description || '',
+                      type: (ds.type as any) || 'postgres',
+                      tables: ds.tables || [],
+                      created_at: new Date().toISOString()
+                  } as DataSource;
+
+                  const saved = await handleAddDataSource(toSave as DataSource);
+                  if (saved && saved.id) {
+                      setReports(prev => prev.map(rep => rep.id === r.id ? { ...rep, dataSourceId: saved.id } : rep));
+                  }
+              } catch (e) {
+                  console.error('Failed to save datasource from viewer', e);
+                  alert('Failed to persist datasource to the server.');
+              }
+          };
+
+          return <ReportViewer report={r} dataSource={dataSources.find(d => d.id === r.dataSourceId)} onBack={() => setCurrentView('reports')} onSaveDataSource={handleSaveDataSourceFromViewer} />;
       case 'reports':
       default:
         // Filter logic

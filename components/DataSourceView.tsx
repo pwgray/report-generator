@@ -4,12 +4,13 @@ import { DataSource, TableDef, ColumnDef, ConnectionDetails } from '../types';
 import { Plus, Database, Edit2, Trash2, Check, Sparkles, ChevronRight, ChevronDown, Table as TableIcon, Server, RefreshCw, Eye, EyeOff, Info } from 'lucide-react';
 import { Button, Input, Card, CardHeader, CardContent, Badge } from './UIComponents';
 import { discoverSchema } from '../services/geminiService';
+import { testConnectionAndFetchSchema } from '../services/datasourceService';
 
 interface DataSourceViewProps {
   dataSources: DataSource[];
-  onAdd: (ds: DataSource) => void;
-  onUpdate: (ds: DataSource) => void;
-  onDelete: (id: string) => void;
+  onAdd: (ds: DataSource) => Promise<any>;
+  onUpdate: (ds: DataSource) => Promise<any>;
+  onDelete: (id: string) => Promise<void>;
   isReadOnly?: boolean;
 }
 
@@ -21,14 +22,14 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
   const [formData, setFormData] = useState<Partial<DataSource>>({
     name: '',
     description: '',
-    type: 'postgres',
+    type: 'sql',
     tables: []
   });
   const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails>({
       host: 'localhost',
-      port: '5432',
-      database: '',
-      username: '',
+      port: '1433',
+      database: 'Northwind',
+      username: 'sa',
       password: ''
   });
   const [aiPrompt, setAiPrompt] = useState('');
@@ -46,14 +47,16 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       setActiveTab('schema'); // If editing, go straight to schema
     } else {
       setEditingId(null);
-      setFormData({ name: '', description: '', type: 'postgres', tables: [] });
-      setConnectionDetails({ host: 'localhost', port: '5432', database: '', username: '', password: '' });
+      setFormData({ name: '', description: '', type: 'sql', tables: [] });
+      setConnectionDetails({ host: 'localhost', port: '1433', database: 'Northwind', username: 'sa', password: '' });
       setActiveTab('connection');
     }
     setIsEditing(true);
   };
 
-  const handleSave = () => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
     if (!formData.name) return;
     
     const ds: DataSource = {
@@ -66,12 +69,20 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       created_at: editingId ? (formData.created_at || new Date().toISOString()) : new Date().toISOString()
     };
 
-    if (editingId) {
-      onUpdate(ds);
-    } else {
-      onAdd(ds);
+    setIsSaving(true);
+    try {
+      if (editingId) {
+        await onUpdate(ds);
+      } else {
+        await onAdd(ds);
+      }
+      setIsEditing(false);
+    } catch (e) {
+      console.error('Failed to save datasource', e);
+      alert('Failed to save datasource to server');
+    } finally {
+      setIsSaving(false);
     }
-    setIsEditing(false);
   };
 
   const handleDiscoverSchema = async () => {
@@ -85,9 +96,21 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
 
     setIsDiscovering(true);
     try {
-        const newTables = await discoverSchema(formData.type || 'custom', dbName, context);
+      if (formData.type === 'custom') {
+        const newTables = await discoverSchema('custom', dbName, context);
         setFormData(prev => ({ ...prev, tables: newTables }));
         setActiveTab('schema');
+      } else {
+        // Call backend to test connection and fetch real schema
+        try {
+          const fetched = await testConnectionAndFetchSchema(formData.type || 'sql', connectionDetails);
+          setFormData(prev => ({ ...prev, tables: fetched }));
+          setActiveTab('schema');
+        } catch (err) {
+          console.error('Test connection failed', err);
+          alert('Failed to connect and fetch schema. Confirm connection details and try again.');
+        }
+      }
     } catch (e) {
         console.error(e);
         alert("Failed to discover schema. Please try again.");
@@ -110,7 +133,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
       setFormData({...formData, tables: newTables});
   }
 
-  const updateColumnMetadata = (tableId: string, colId: string, field: 'alias' | 'description', value: string) => {
+  const updateColumnMetadata = (tableId: string, colId: string, field: 'alias' | 'description' | 'sampleValue', value: string) => {
     const newTables = formData.tables?.map(t => {
         if (t.id !== tableId) return t;
         return {
@@ -131,7 +154,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
             </div>
             <div className="flex space-x-2">
                 <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
-                <Button onClick={handleSave}>
+                <Button onClick={handleSave} loading={isSaving}>
                     <Check className="w-4 h-4 mr-2" /> Save Configuration
                 </Button>
             </div>
@@ -153,8 +176,6 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                 onChange={(e: any) => setFormData({...formData, type: e.target.value})}
                             >
                                 <option value="postgres">PostgreSQL</option>
-                                <option value="mysql">MySQL</option>
-                                <option value="snowflake">Snowflake</option>
                                 <option value="sql">Microsoft SQL</option>
                                 <option value="custom">Custom / AI Generated</option>
                             </select>
@@ -306,7 +327,13 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                                                                             />
                                                                         </td>
                                                                         <td className="px-3 py-2 text-xs text-gray-500 italic truncate max-w-[150px]">
-                                                                            {col.sampleValue || '-'}
+                                                                            <input
+                                                                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 italic text-xs"
+                                                                                value={col.sampleValue || ''}
+                                                                                placeholder="sample..."
+                                                                                onChange={(e) => updateColumnMetadata(table.id, col.id, 'sampleValue', e.target.value)}
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            />
                                                                         </td>
                                                                     </tr>
                                                                 ))}
@@ -359,7 +386,7 @@ export const DataSourceView: React.FC<DataSourceViewProps> = ({ dataSources, onA
                             <button onClick={() => startEdit(ds)} className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600" title="Edit">
                                 <Edit2 className="w-4 h-4" />
                             </button>
-                            <button onClick={() => onDelete(ds.id)} className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-red-600" title="Delete">
+                            <button onClick={async () => { if (confirm('Delete this data source?')) { try { await onDelete(ds.id); } catch(e) { console.error(e); alert('Failed to delete datasource'); } } }} className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-red-600" title="Delete">
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>

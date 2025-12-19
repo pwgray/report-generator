@@ -86,11 +86,13 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
       setConfig({...config, filters: newFilters});
   };
 
-  // Helper to find column name
+  // Helper to find column name (use aliases when available)
   const getColName = (tableId: string, colId: string) => {
       const t = selectedDs?.tables.find(t => t.id === tableId);
       const c = t?.columns.find(c => c.id === colId);
-      return `${t?.name}.${c?.name}`;
+      const tableLabel = t ? (t.alias || t.name) : tableId;
+      const colLabel = c ? (c.alias || c.name) : colId;
+      return `${tableLabel}.${colLabel}`;
   };
 
   return (
@@ -182,7 +184,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                                             onChange={() => toggleColumn(table.id, col.id)}
                                                             className="rounded text-blue-600 focus:ring-blue-500"
                                                         />
-                                                        <span>{col.name}</span>
+                                                        <span>{col.alias || col.name}</span>
                                                         <span className="text-xs text-gray-400 ml-auto">{col.type}</span>
                                                     </label>
                                                 )
@@ -228,7 +230,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                             }}
                                         >
                                             {selectedDs?.tables.filter(t => t.exposed).flatMap(t => 
-                                                t.columns.map(c => <option key={c.id} value={c.id}>{t.name}.{c.name}</option>)
+                                                t.columns.map(c => <option key={c.id} value={c.id}>{(t.alias || t.name)}.{(c.alias || c.name)}</option>)
                                             )}
                                         </select>
                                         <div className="flex space-x-2">

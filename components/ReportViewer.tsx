@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataSource, ReportConfig } from '../types';
 import { generateReportData } from '../services/geminiService';
+import { fetchTableData } from '../services/datasourceService';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Button, Card } from './UIComponents';
 import { ArrowLeft, RefreshCw, Calendar, Download } from 'lucide-react';
@@ -10,22 +11,95 @@ interface ReportViewerProps {
   report: ReportConfig;
   dataSource?: DataSource;
   onBack: () => void;
+  onSaveDataSource?: (ds: DataSource) => Promise<any>;
 }
 
-export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, onBack }) => {
+export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, onBack, onSaveDataSource }) => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastRun, setLastRun] = useState<Date | null>(null);
+  const [dataOrigin, setDataOrigin] = useState<'live' | 'ai' | null>(null);
+  const [recordsCount, setRecordsCount] = useState<number | null>(null);
+  const [executionMs, setExecutionMs] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
-    if (!dataSource) return;
     setLoading(true);
+    setError(null);
+    setRecordsCount(null);
+    setExecutionMs(null);
+
+    const start = performance.now();
+
     try {
-        const result = await generateReportData(dataSource, report);
-        setData(result);
+        // If datasource is an AI datasource (custom), use AI only
+        const isAiDatasource = dataSource?.type === 'custom';
+
+        if (isAiDatasource) {
+            // Use AI-generated data only
+            const result = await generateReportData(dataSource!, report, 100);
+            setData(result || []);
+            setDataOrigin('ai');
+            setLastRun(new Date());
+            setRecordsCount((result || []).length);
+            setExecutionMs(Math.round(performance.now() - start));
+            return;
+        }
+
+        // For non-AI datasources, require live data only
+        if (!dataSource) {
+            setError('No data source configured for this report.');
+            setData([]);
+            return;
+        }
+
+        if (!report.selectedColumns || report.selectedColumns.length === 0) {
+            setError('No columns selected for this report.');
+            setData([]);
+            return;
+        }
+
+        const tableIds = Array.from(new Set(report.selectedColumns.map(c => c.tableId)));
+        if (tableIds.length !== 1) {
+            setError('Live data fetch supports reports which select columns from a single table only.');
+            setData([]);
+            return;
+        }
+
+        const tableId = tableIds[0];
+        const table = (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId);
+        if (!table || table.exposed === false) {
+            setError('Target table not found or not exposed in datasource.');
+            setData([]);
+            return;
+        }
+
+        // Resolve column names
+        const cols: string[] = [];
+        for (const rc of report.selectedColumns) {
+            const col = (table.columns || []).find((cc: any) => cc.id === rc.columnId || cc.name === rc.columnId);
+            if (!col) {
+                setError(`Column ${rc.columnId} not found on table ${table.name}.`);
+                setData([]);
+                return;
+            }
+            cols.push(col.name);
+        }
+
+        // Execute live fetch
+        // Always send the full datasource object so the server can run ad-hoc queries
+        const dsArg = dataSource;
+        const rows = await fetchTableData(dsArg, table.name, cols, 1000000);
+        setData(rows || []);
+        setDataOrigin('live');
         setLastRun(new Date());
-    } catch (e) {
-        console.error(e);
+        setRecordsCount((rows || []).length);
+        setExecutionMs(Math.round(performance.now() - start));
+
+    } catch (err) {
+        console.error('Live fetch failed', (err as any)?.message || err);
+        setError('Failed to fetch live data for this report.');
+        setData([]);
     } finally {
         setLoading(false);
     }
@@ -33,7 +107,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
 
   useEffect(() => {
     fetchData();
-  }, [report.id]);
+  }, [report.id, dataSource?.id]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
@@ -51,12 +125,37 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
       return keys.find(k => typeof data[0][k] === 'string') || keys[0];
   };
 
+  // Map a raw field name to a human-friendly alias using report/datasource metadata when available
+  const getAliasForField = (fieldName: string) => {
+      // If AI returned a dotted key like `table.column`, use the suffix
+      const simpleName = fieldName.includes('.') ? fieldName.split('.').pop() as string : fieldName;
+
+      // Prefer report-level alias (report.selectedColumns may include alias)
+      const reportCol = report.selectedColumns?.find(rc => rc.columnId === simpleName || rc.columnId === fieldName);
+      if (reportCol?.alias) return reportCol.alias;
+
+      // Search the current datasource schema
+      const tableIds = Array.from(new Set(report.selectedColumns.map(c => c.tableId)));
+      const tableId = tableIds.length === 1 ? tableIds[0] : undefined;
+      const table = dataSource && tableId ? (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId) : undefined;
+      if (table) {
+          const col = (table.columns || []).find((cc: any) => cc.name === simpleName || cc.id === simpleName || (`${table.name}.${cc.name}`) === fieldName);
+          if (col && col.alias) return col.alias;
+      }
+
+      // Fallback to the original simple name (or full fieldName if that makes sense)
+      return simpleName || fieldName;
+  };
+
   const numericKey = getNumericKey();
   const labelKey = getLabelKey();
 
+  // Whether the datasource is ephemeral (unsaved) - used to show a UI hint
+  const isEphemeral = !!dataSource && !dataSource.id;
+
   const renderVisuals = () => {
-      if (loading) return <div className="h-96 flex items-center justify-center">Generating Report Data...</div>;
-      if (data.length === 0) return <div className="h-96 flex items-center justify-center text-gray-500">No Data Available</div>;
+      if (loading) return <div className="h-96 flex items-center justify-center">{dataOrigin === 'ai' ? 'Generating Report Data...' : 'Fetching Live Data...'}</div>;
+      if (data.length === 0) return <div className="h-96 flex items-center justify-center text-gray-500">{error ? error : 'No Data Available'}</div>;
 
       switch(report.visualization) {
           case 'bar':
@@ -64,8 +163,8 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                   <ResponsiveContainer width="100%" height={400}>
                       <BarChart data={data} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey={labelKey} />
-                          <YAxis />
+                          <XAxis dataKey={labelKey} label={{ value: getAliasForField(labelKey), position: 'bottom' }} />
+                          <YAxis label={{ value: getAliasForField(numericKey), angle: -90, position: 'insideLeft' }} />
                           <Tooltip />
                           <Legend />
                           <Bar dataKey={numericKey} fill="#3b82f6" />
@@ -77,8 +176,8 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                   <ResponsiveContainer width="100%" height={400}>
                       <LineChart data={data} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey={labelKey} />
-                          <YAxis />
+                          <XAxis dataKey={labelKey} label={{ value: getAliasForField(labelKey), position: 'bottom' }} />
+                          <YAxis label={{ value: getAliasForField(numericKey), angle: -90, position: 'insideLeft' }} />
                           <Tooltip />
                           <Legend />
                           <Line type="monotone" dataKey={numericKey} stroke="#3b82f6" activeDot={{ r: 8 }} />
@@ -94,7 +193,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                label={({ name, percent }) => `${getAliasForField(String(name))}: ${(percent * 100).toFixed(0)}%`}
                                 outerRadius={150}
                                 fill="#8884d8"
                                 dataKey={numericKey}
@@ -116,7 +215,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                             <tr>
                                 {Object.keys(data[0] || {}).map(key => (
                                     <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        {key}
+                                        {getAliasForField(key)}
                                     </th>
                                 ))}
                             </tr>
@@ -147,9 +246,46 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                 </Button>
                 <div>
                     <h2 className="text-2xl font-bold text-gray-800">{report.name}</h2>
-                    <p className="text-sm text-gray-500 flex items-center">
-                        <Calendar className="w-3 h-3 mr-1" />
-                        Last run: {lastRun ? format(lastRun, 'MMM d, yyyy HH:mm:ss') : 'Never'}
+                    <p className="text-sm text-gray-500 flex items-center space-x-3">
+                        <span className="flex items-center">
+                          <Calendar className="w-3 h-3 mr-1" />
+                          Last run: {lastRun ? format(lastRun, 'MMM d, yyyy HH:mm:ss') : 'Never'}
+                        </span>
+                        <span className="text-sm text-gray-500">Rows: {recordsCount ?? '-'}</span>
+                        <span className="text-sm text-gray-500">Exec: {executionMs !== null ? `${executionMs} ms` : '-'}</span>
+                        {dataOrigin && (
+                            <span className="ml-3 text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">{dataOrigin === 'live' ? 'Live' : 'AI'}</span>
+                        )}
+                        {dataSource && (
+                            <>
+                              <span
+                                  title={isEphemeral ? 'Unsaved (ephemeral) datasource' : 'Saved datasource'}
+                                  className={`ml-3 text-xs px-2 py-1 rounded ${isEphemeral ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-700'}`}
+                              >
+                                  {isEphemeral ? 'Unsaved' : 'Saved'}
+                              </span>
+                              {isEphemeral && onSaveDataSource && (
+                                  <button
+                                      onClick={async (e) => {
+                                          e.preventDefault();
+                                          try {
+                                              setLoading(true);
+                                              await onSaveDataSource(dataSource);
+                                              alert('Datasource saved');
+                                          } catch (e) {
+                                              console.error('Failed to save datasource', e);
+                                              alert('Failed to save datasource');
+                                          } finally {
+                                              setLoading(false);
+                                          }
+                                      } }
+                                      className="ml-3 inline-flex items-center px-3 py-1 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+                                  >
+                                      Save Datasource
+                                  </button>
+                              )}
+                            </>
+                        )}
                     </p>
                 </div>
             </div>
@@ -182,7 +318,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                               <tr>
                                   {Object.keys(data[0] || {}).map(key => (
                                       <th key={key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50">
-                                          {key}
+                                          {getAliasForField(key)}
                                       </th>
                                   ))}
                               </tr>

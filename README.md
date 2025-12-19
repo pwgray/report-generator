@@ -25,6 +25,9 @@ VITE_GEMINI_API_KEY=your_gemini_api_key_here
 
 ## Security
 
+- The `ReportViewer` will attempt to fetch live sample rows from a configured data source by calling the server endpoint `POST /api/datasources/query` when the report uses columns from a single exposed table. If live fetching fails, it falls back to AI-generated mock data. This is meant for previewing and troubleshooting only — do not rely on this for production queries without additional validation and access controls.
+
+
 - **Do not** commit API keys or other secrets into the repository. Add `.env.local` to your local `.gitignore` (it is commonly ignored by default) and never push files containing `VITE_GEMINI_API_KEY` or other credentials.
 - **Avoid embedding production secrets in frontend builds.** Vite exposes `import.meta.env.VITE_*` values in the compiled bundle — a public build can expose those values to end users. For production, move calls that require secrets to a trusted server-side endpoint (API gateway / serverless function) and have the frontend call that endpoint instead.
 - **Rotate keys regularly** and use least-privilege credentials for AI services.

@@ -6,6 +6,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { Button, Card } from './UIComponents';
 import { ArrowLeft, RefreshCw, Calendar, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 interface ReportViewerProps {
   report: ReportConfig;
@@ -153,6 +154,64 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
   // Whether the datasource is ephemeral (unsaved) - used to show a UI hint
   const isEphemeral = !!dataSource && !dataSource.id;
 
+  // Export data to Excel
+  const handleExportToExcel = () => {
+    if (!data || data.length === 0) {
+      alert('No data available to export');
+      return;
+    }
+
+    try {
+      // Prepare data with human-friendly column names
+      const exportData = data.map(row => {
+        const formattedRow: any = {};
+        Object.keys(row).forEach(key => {
+          const alias = getAliasForField(key);
+          const value = row[key];
+          // Handle different data types
+          if (typeof value === 'object' && value !== null) {
+            formattedRow[alias] = JSON.stringify(value);
+          } else if (value === null || value === undefined) {
+            formattedRow[alias] = '';
+          } else {
+            formattedRow[alias] = value;
+          }
+        });
+        return formattedRow;
+      });
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+
+      // Auto-size columns (approximate)
+      const colWidths = Object.keys(exportData[0] || {}).map(key => {
+        const maxLength = Math.max(
+          key.length,
+          ...exportData.slice(0, 100).map(row => String(row[key] || '').length)
+        );
+        return { wch: Math.min(maxLength + 2, 50) }; // Cap at 50 characters
+      });
+      ws['!cols'] = colWidths;
+
+      // Add worksheet to workbook
+      const sheetName = report.name.substring(0, 31).replace(/[\\/?*[\]]/g, '_'); // Excel sheet name limit
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      // Generate filename with timestamp
+      const timestamp = format(new Date(), 'yyyy-MM-dd_HHmmss');
+      const filename = `${report.name.replace(/[\\/?*[\]]/g, '_')}_${timestamp}.xlsx`;
+
+      // Download file
+      XLSX.writeFile(wb, filename);
+
+      console.log(`[ReportViewer] Exported ${exportData.length} rows to ${filename}`);
+    } catch (error) {
+      console.error('[ReportViewer] Export failed', error);
+      alert('Failed to export data. Please try again.');
+    }
+  };
+
   const renderVisuals = () => {
       if (loading) return <div className="h-96 flex items-center justify-center">{dataOrigin === 'ai' ? 'Generating Report Data...' : 'Fetching Live Data...'}</div>;
       if (data.length === 0) return <div className="h-96 flex items-center justify-center text-gray-500">{error ? error : 'No Data Available'}</div>;
@@ -293,8 +352,12 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                 <Button variant="outline" onClick={fetchData} loading={loading}>
                     <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </Button>
-                <Button variant="secondary">
-                    <Download className="w-4 h-4 mr-2" /> Export
+                <Button 
+                    variant="secondary" 
+                    onClick={handleExportToExcel}
+                    disabled={!data || data.length === 0 || loading}
+                >
+                    <Download className="w-4 h-4 mr-2" /> Export to Excel
                 </Button>
             </div>
         </div>

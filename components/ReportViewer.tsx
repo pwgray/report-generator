@@ -153,10 +153,14 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
         const filters = report.filters || [];
         console.log('[ReportViewer] Applying filters:', filters);
 
+        // Prepare sorts for backend
+        const sorts = report.sorts || [];
+        console.log('[ReportViewer] Applying sorts:', sorts);
+
         // Execute live fetch
         // Always send the full datasource object so the server can run ad-hoc queries
         const dsArg = dataSource;
-        const rows = await fetchTableData(dsArg, table.name, cols, 1000000, filters);
+        const rows = await fetchTableData(dsArg, table.name, cols, 1000000, filters, sorts);
         setData(rows || []);
         setDataOrigin('live');
         setLastRun(new Date());

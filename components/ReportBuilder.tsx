@@ -299,10 +299,244 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                 )})}
                             </div>
                         )}
+                    </div>
+                )}
 
-                        {/* Selected Columns & Formatting */}
+                {activeTab === 'filter' && (
+                    <div className="space-y-6">
+                        <div>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-medium text-gray-900">Filters</h3>
+                                <Button variant="ghost" className="text-xs" onClick={addFilter}>
+                                    <Plus className="w-3 h-3 mr-1" /> Add Filter
+                                </Button>
+                            </div>
+                            <div className="space-y-3">
+                                {config.filters.map((filter, idx) => {
+                                    const columnType = getColumnType(filter.tableId, filter.columnId);
+                                    const operators = getOperatorsForType(columnType);
+                                    const needsValueInput = !['is_null', 'is_not_null', 'is_empty', 'is_not_empty', 'today', 'this_week', 'this_month', 'this_year'].includes(filter.operator);
+                                    const needsTwoValues = filter.operator === 'between';
+                                    
+                                    return (
+                                    <div key={filter.id} className="p-3 bg-gray-50 rounded-md border border-gray-200 space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-semibold text-gray-500">Filter #{idx + 1}</span>
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{columnType}</span>
+                                                <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Column Selection */}
+                                        <select 
+                                            className="w-full text-sm border-gray-300 rounded-md"
+                                            value={filter.columnId}
+                                            onChange={(e) => {
+                                                let tid = filter.tableId;
+                                                allTablesAndViews.forEach(t => {
+                                                    if(t.columns.find(c => c.id === e.target.value)) tid = t.id;
+                                                });
+                                                const newFilters = [...config.filters];
+                                                newFilters[idx] = { ...newFilters[idx], columnId: e.target.value, tableId: tid };
+                                                setConfig({...config, filters: newFilters});
+                                            }}
+                                        >
+                                            {allTablesAndViews.filter(t => t.exposed).flatMap(t => 
+                                                t.columns.map(c => <option key={c.id} value={c.id}>{(t.alias || t.name)}.{(c.alias || c.name)}</option>)
+                                            )}
+                                        </select>
+                                        
+                                        {/* Operator Selection */}
+                                        <div className={needsValueInput ? "flex space-x-2" : ""}>
+                                            <select 
+                                                className={`text-sm border-gray-300 rounded-md ${needsValueInput ? 'w-1/3' : 'w-full'}`}
+                                                value={filter.operator}
+                                                onChange={(e) => updateFilter(idx, 'operator', e.target.value)}
+                                            >
+                                                {operators.map(op => (
+                                                    <option key={op.value} value={op.value}>{op.label}</option>
+                                                ))}
+                                            </select>
+                                            
+                                            {/* Value Input - Type-specific */}
+                                            {needsValueInput && (
+                                                <>
+                                                    {columnType === 'date' && (
+                                                        <input 
+                                                            type="date"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        />
+                                                    )}
+                                                    {(columnType === 'number' || columnType === 'currency') && (
+                                                        <input 
+                                                            type="number"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            placeholder={columnType === 'currency' ? 'Amount...' : 'Number...'}
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                            step={columnType === 'currency' ? '0.01' : 'any'}
+                                                        />
+                                                    )}
+                                                    {columnType === 'boolean' && (
+                                                        <select
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        >
+                                                            <option value="true">True</option>
+                                                            <option value="false">False</option>
+                                                        </select>
+                                                    )}
+                                                    {columnType === 'string' && (
+                                                        <input 
+                                                            type="text"
+                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
+                                                            placeholder={filter.operator === 'in' ? 'value1,value2,value3...' : 'Value...'}
+                                                            value={filter.value}
+                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
+                                                        />
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Second value for BETWEEN operator */}
+                                        {needsTwoValues && (
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs text-gray-500">and</span>
+                                                {columnType === 'date' && (
+                                                    <input 
+                                                        type="date"
+                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
+                                                        value={filter.value2 || ''}
+                                                        onChange={(e) => {
+                                                            const newFilters = [...config.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
+                                                            setConfig({...config, filters: newFilters});
+                                                        }}
+                                                    />
+                                                )}
+                                                {(columnType === 'number' || columnType === 'currency') && (
+                                                    <input 
+                                                        type="number"
+                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
+                                                        placeholder="Upper bound..."
+                                                        value={filter.value2 || ''}
+                                                        onChange={(e) => {
+                                                            const newFilters = [...config.filters];
+                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
+                                                            setConfig({...config, filters: newFilters});
+                                                        }}
+                                                        step={columnType === 'currency' ? '0.01' : 'any'}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )})}
+                                {config.filters.length === 0 && <p className="text-sm text-gray-500 italic">No filters defined. Add filters to refine your report data.</p>}
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-medium text-gray-900">Sorting</h3>
+                                <Button 
+                                    variant="ghost" 
+                                    className="text-xs" 
+                                    onClick={() => {
+                                        if (config.selectedColumns.length === 0) {
+                                            alert('Please select columns first');
+                                            return;
+                                        }
+                                        const firstCol = config.selectedColumns[0];
+                                        setConfig({
+                                            ...config,
+                                            sorts: [...config.sorts, {
+                                                tableId: firstCol.tableId,
+                                                columnId: firstCol.columnId,
+                                                direction: 'asc'
+                                            }]
+                                        });
+                                    }}
+                                >
+                                    <Plus className="w-3 h-3 mr-1" /> Add Sort
+                                </Button>
+                            </div>
+                            <div className="space-y-3">
+                                {config.sorts.map((sort, idx) => (
+                                    <div key={idx} className="p-3 bg-gray-50 rounded-md border border-gray-200 space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-semibold text-gray-500">Sort #{idx + 1}</span>
+                                            <button 
+                                                onClick={() => {
+                                                    const newSorts = [...config.sorts];
+                                                    newSorts.splice(idx, 1);
+                                                    setConfig({...config, sorts: newSorts});
+                                                }} 
+                                                className="text-red-500 hover:text-red-700"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="space-y-2">
+                                            {/* Column Selection */}
+                                            <div>
+                                                <label className="text-xs text-gray-500 block mb-1">Field</label>
+                                                <select 
+                                                    className="w-full text-sm border-gray-300 rounded-md"
+                                                    value={sort.columnId}
+                                                    onChange={(e) => {
+                                                        let tid = sort.tableId;
+                                                        allTablesAndViews.forEach(t => {
+                                                            if(t.columns.find(c => c.id === e.target.value)) tid = t.id;
+                                                        });
+                                                        const newSorts = [...config.sorts];
+                                                        newSorts[idx] = { ...newSorts[idx], columnId: e.target.value, tableId: tid };
+                                                        setConfig({...config, sorts: newSorts});
+                                                    }}
+                                                >
+                                                    {config.selectedColumns.map(sc => {
+                                                        const colName = getColName(sc.tableId, sc.columnId);
+                                                        return <option key={sc.columnId} value={sc.columnId}>{colName}</option>;
+                                                    })}
+                                                </select>
+                                            </div>
+                                            
+                                            {/* Direction Selection */}
+                                            <div>
+                                                <label className="text-xs text-gray-500 block mb-1">Direction</label>
+                                                <select 
+                                                    className="w-full text-sm border-gray-300 rounded-md"
+                                                    value={sort.direction}
+                                                    onChange={(e) => {
+                                                        const newSorts = [...config.sorts];
+                                                        newSorts[idx] = { ...newSorts[idx], direction: e.target.value as 'asc' | 'desc' };
+                                                        setConfig({...config, sorts: newSorts});
+                                                    }}
+                                                >
+                                                    <option value="asc">Ascending ↑</option>
+                                                    <option value="desc">Descending ↓</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {config.sorts.length === 0 && <p className="text-sm text-gray-500 italic">No sorting defined. Add sort rules to order your report data.</p>}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'visual' && (
+                    <div className="space-y-6">
+                        {/* Column Formatting Section */}
                         {config.selectedColumns.length > 0 && (
-                            <div className="space-y-4 border-t pt-4 mt-4">
+                            <div className="space-y-4">
                                 <h3 className="font-medium text-gray-900 flex items-center">
                                     <Settings className="w-4 h-4 mr-2" />
                                     Column Formatting ({config.selectedColumns.length})
@@ -519,161 +753,8 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                 </div>
                             </div>
                         )}
-                    </div>
-                )}
 
-                {activeTab === 'filter' && (
-                    <div className="space-y-6">
-                        <div>
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-medium text-gray-900">Filters</h3>
-                                <Button variant="ghost" className="text-xs" onClick={addFilter}>
-                                    <Plus className="w-3 h-3 mr-1" /> Add Filter
-                                </Button>
-                            </div>
-                            <div className="space-y-3">
-                                {config.filters.map((filter, idx) => {
-                                    const columnType = getColumnType(filter.tableId, filter.columnId);
-                                    const operators = getOperatorsForType(columnType);
-                                    const needsValueInput = !['is_null', 'is_not_null', 'is_empty', 'is_not_empty', 'today', 'this_week', 'this_month', 'this_year'].includes(filter.operator);
-                                    const needsTwoValues = filter.operator === 'between';
-                                    
-                                    return (
-                                    <div key={filter.id} className="p-3 bg-gray-50 rounded-md border border-gray-200 space-y-2">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs font-semibold text-gray-500">Filter #{idx + 1}</span>
-                                            <div className="flex items-center space-x-2">
-                                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{columnType}</span>
-                                                <button onClick={() => removeFilter(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Column Selection */}
-                                        <select 
-                                            className="w-full text-sm border-gray-300 rounded-md"
-                                            value={filter.columnId}
-                                            onChange={(e) => {
-                                                let tid = filter.tableId;
-                                                allTablesAndViews.forEach(t => {
-                                                    if(t.columns.find(c => c.id === e.target.value)) tid = t.id;
-                                                });
-                                                const newFilters = [...config.filters];
-                                                newFilters[idx] = { ...newFilters[idx], columnId: e.target.value, tableId: tid };
-                                                setConfig({...config, filters: newFilters});
-                                            }}
-                                        >
-                                            {allTablesAndViews.filter(t => t.exposed).flatMap(t => 
-                                                t.columns.map(c => <option key={c.id} value={c.id}>{(t.alias || t.name)}.{(c.alias || c.name)}</option>)
-                                            )}
-                                        </select>
-                                        
-                                        {/* Operator Selection */}
-                                        <div className={needsValueInput ? "flex space-x-2" : ""}>
-                                            <select 
-                                                className={`text-sm border-gray-300 rounded-md ${needsValueInput ? 'w-1/3' : 'w-full'}`}
-                                                value={filter.operator}
-                                                onChange={(e) => updateFilter(idx, 'operator', e.target.value)}
-                                            >
-                                                {operators.map(op => (
-                                                    <option key={op.value} value={op.value}>{op.label}</option>
-                                                ))}
-                                            </select>
-                                            
-                                            {/* Value Input - Type-specific */}
-                                            {needsValueInput && (
-                                                <>
-                                                    {columnType === 'date' && (
-                                                        <input 
-                                                            type="date"
-                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
-                                                            value={filter.value}
-                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
-                                                        />
-                                                    )}
-                                                    {(columnType === 'number' || columnType === 'currency') && (
-                                                        <input 
-                                                            type="number"
-                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
-                                                            placeholder={columnType === 'currency' ? 'Amount...' : 'Number...'}
-                                                            value={filter.value}
-                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
-                                                            step={columnType === 'currency' ? '0.01' : 'any'}
-                                                        />
-                                                    )}
-                                                    {columnType === 'boolean' && (
-                                                        <select
-                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
-                                                            value={filter.value}
-                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
-                                                        >
-                                                            <option value="true">True</option>
-                                                            <option value="false">False</option>
-                                                        </select>
-                                                    )}
-                                                    {columnType === 'string' && (
-                                                        <input 
-                                                            type="text"
-                                                            className="w-2/3 text-sm border-gray-300 rounded-md p-1"
-                                                            placeholder={filter.operator === 'in' ? 'value1,value2,value3...' : 'Value...'}
-                                                            value={filter.value}
-                                                            onChange={(e) => updateFilter(idx, 'value', e.target.value)}
-                                                        />
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
-                                        
-                                        {/* Second value for BETWEEN operator */}
-                                        {needsTwoValues && (
-                                            <div className="flex items-center space-x-2">
-                                                <span className="text-xs text-gray-500">and</span>
-                                                {columnType === 'date' && (
-                                                    <input 
-                                                        type="date"
-                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
-                                                        value={filter.value2 || ''}
-                                                        onChange={(e) => {
-                                                            const newFilters = [...config.filters];
-                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
-                                                            setConfig({...config, filters: newFilters});
-                                                        }}
-                                                    />
-                                                )}
-                                                {(columnType === 'number' || columnType === 'currency') && (
-                                                    <input 
-                                                        type="number"
-                                                        className="flex-1 text-sm border-gray-300 rounded-md p-1"
-                                                        placeholder="Upper bound..."
-                                                        value={filter.value2 || ''}
-                                                        onChange={(e) => {
-                                                            const newFilters = [...config.filters];
-                                                            newFilters[idx] = { ...newFilters[idx], value2: e.target.value };
-                                                            setConfig({...config, filters: newFilters});
-                                                        }}
-                                                        step={columnType === 'currency' ? '0.01' : 'any'}
-                                                    />
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )})}
-                                {config.filters.length === 0 && <p className="text-sm text-gray-500 italic">No filters defined. Add filters to refine your report data.</p>}
-                            </div>
-                        </div>
-
-                        <div className="border-t pt-4">
-                             <h3 className="font-medium text-gray-900 mb-2">Sorting</h3>
-                             {/* Simplified Sorting UI for MVP */}
-                             <div className="p-3 bg-gray-50 rounded text-sm text-gray-600">
-                                Sorting configuration not implemented in MVP demo.
-                             </div>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'visual' && (
-                    <div className="space-y-6">
-                        <div>
+                        <div className={config.selectedColumns.length > 0 ? "border-t pt-6" : ""}>
                             <label className="mb-2 text-sm font-medium text-gray-700 block">Chart Type</label>
                             <div className="grid grid-cols-2 gap-2">
                                 {[

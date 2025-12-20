@@ -222,15 +222,34 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
   };
 
   const getFormattingForField = (fieldName: string): FormattingConfig | undefined => {
-      if (!fieldName) return undefined;
+      if (!fieldName || !dataSource) return undefined;
       const simpleName = fieldName.includes('.') ? fieldName.split('.').pop() as string : fieldName;
       
-      // Find the formatting configuration from report.selectedColumns
-      const reportCol = report.selectedColumns?.find(rc => rc.columnId === simpleName || rc.columnId === fieldName);
+      // Get the table/view IDs from selected columns
+      const tableIds = Array.from(new Set(report.selectedColumns.map(c => c.tableId)));
+      const tableId = tableIds.length === 1 ? tableIds[0] : undefined;
+      
+      // Find the table or view
+      let table = dataSource && tableId ? (dataSource.tables || []).find(t => t.id === tableId || t.name === tableId) : undefined;
+      if (!table && dataSource && tableId) {
+          table = (dataSource.views || []).find(v => v.id === tableId || v.name === tableId);
+      }
+      
+      if (!table) return undefined;
+      
+      // Find the column definition by name
+      const colDef = (table.columns || []).find((cc: any) => cc.name === simpleName || cc.id === simpleName);
+      if (!colDef) return undefined;
+      
+      // Find the report column that matches this column definition
+      const reportCol = report.selectedColumns?.find(rc => rc.columnId === colDef.id);
       return reportCol?.formatting;
   };
 
   const formatValue = (value: any, fieldName: string): string => {
+      // Simple debug - remove after confirming it works
+      console.log(`Formatting ${fieldName}:`, value, '| Has formatting:', !!getFormattingForField(fieldName));
+      
       if (value === null || value === undefined) return '';
       
       const formatting = getFormattingForField(fieldName);
@@ -471,9 +490,9 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                         <tbody className="bg-white divide-y divide-gray-200">
                             {data.map((row, idx) => (
                                 <tr key={idx} className="hover:bg-gray-50">
-                                    {Object.values(row).map((val: any, i) => (
+                                    {Object.entries(row).map(([key, val]: [string, any], i) => (
                                         <td key={i} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                                            {formatValue(val, key)}
                                         </td>
                                     ))}
                                 </tr>

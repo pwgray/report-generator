@@ -85,11 +85,48 @@ export interface DataSource {
 export type Aggregation = 'none' | 'sum' | 'avg' | 'count' | 'min' | 'max';
 export type SortDirection = 'asc' | 'desc';
 
+// Formatting configurations by data type
+export interface DateFormatting {
+  format: 'MM/DD/YYYY' | 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MMM DD, YYYY' | 'MMMM DD, YYYY' | 'relative' | 'iso';
+}
+
+export interface NumberFormatting {
+  decimalPlaces: number;
+  thousandSeparator: boolean;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface CurrencyFormatting {
+  symbol: string;
+  decimalPlaces: number;
+  thousandSeparator: boolean;
+  symbolPosition: 'before' | 'after';
+}
+
+export interface BooleanFormatting {
+  style: 'true/false' | 'yes/no' | '1/0' | 'check/x' | 'enabled/disabled';
+}
+
+export interface StringFormatting {
+  case?: 'uppercase' | 'lowercase' | 'capitalize' | 'none';
+  truncate?: number;
+}
+
+export type FormattingConfig = 
+  | { type: 'date'; config: DateFormatting }
+  | { type: 'number'; config: NumberFormatting }
+  | { type: 'currency'; config: CurrencyFormatting }
+  | { type: 'boolean'; config: BooleanFormatting }
+  | { type: 'string'; config: StringFormatting }
+  | { type: 'none' };
+
 export interface ReportColumn {
   tableId: string;
   columnId: string;
   alias?: string;
   aggregation?: Aggregation;
+  formatting?: FormattingConfig;
 }
 
 export interface FilterCondition {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { DataSource, ReportConfig, TableDef, ColumnDef, ReportColumn, FilterCondition, SortCondition, VisualizationType } from '../types';
+import { DataSource, ReportConfig, TableDef, ColumnDef, ReportColumn, FilterCondition, SortCondition, VisualizationType, FormattingConfig, ColumnType } from '../types';
 import { Button, Input, Select, Card, CardHeader, CardContent } from './UIComponents';
-import { ChevronRight, Save, Play, Plus, Trash2, BarChart2, Table as TableIcon, PieChart, TrendingUp, Filter, ArrowUpDown, Lock, Globe } from 'lucide-react';
+import { ChevronRight, Save, Play, Plus, Trash2, BarChart2, Table as TableIcon, PieChart, TrendingUp, Filter, ArrowUpDown, Lock, Globe, Settings } from 'lucide-react';
 
 interface ReportBuilderProps {
   dataSources: DataSource[];
@@ -55,10 +55,38 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
             selectedColumns: config.selectedColumns.filter(c => c !== exists)
         });
     } else {
+        const colType = getColumnType(tableId, columnId) as ColumnType;
+        const defaultFormatting = getDefaultFormatting(colType);
         setConfig({
             ...config,
-            selectedColumns: [...config.selectedColumns, { tableId, columnId }]
+            selectedColumns: [...config.selectedColumns, { tableId, columnId, formatting: defaultFormatting }]
         });
+    }
+  };
+
+  const updateColumnFormatting = (tableId: string, columnId: string, formatting: FormattingConfig) => {
+    const newColumns = config.selectedColumns.map(col => {
+        if (col.tableId === tableId && col.columnId === columnId) {
+            return { ...col, formatting };
+        }
+        return col;
+    });
+    setConfig({ ...config, selectedColumns: newColumns });
+  };
+
+  const getDefaultFormatting = (columnType: ColumnType): FormattingConfig => {
+    switch (columnType) {
+        case 'date':
+            return { type: 'date', config: { format: 'MM/DD/YYYY' } };
+        case 'number':
+            return { type: 'number', config: { decimalPlaces: 2, thousandSeparator: true } };
+        case 'currency':
+            return { type: 'currency', config: { symbol: '$', decimalPlaces: 2, thousandSeparator: true, symbolPosition: 'before' } };
+        case 'boolean':
+            return { type: 'boolean', config: { style: 'true/false' } };
+        case 'string':
+        default:
+            return { type: 'string', config: { case: 'none' } };
     }
   };
 
@@ -269,6 +297,226 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({ dataSources, onSav
                                         </div>
                                     </div>
                                 )})}
+                            </div>
+                        )}
+
+                        {/* Selected Columns & Formatting */}
+                        {config.selectedColumns.length > 0 && (
+                            <div className="space-y-4 border-t pt-4 mt-4">
+                                <h3 className="font-medium text-gray-900 flex items-center">
+                                    <Settings className="w-4 h-4 mr-2" />
+                                    Column Formatting ({config.selectedColumns.length})
+                                </h3>
+                                <div className="space-y-2">
+                                    {config.selectedColumns.map((col, idx) => {
+                                        const colType = getColumnType(col.tableId, col.columnId) as ColumnType;
+                                        const colName = getColName(col.tableId, col.columnId);
+                                        const formatting = col.formatting || getDefaultFormatting(colType);
+                                        
+                                        return (
+                                            <div key={`${col.tableId}-${col.columnId}`} className="p-3 bg-white border border-gray-200 rounded-md space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-medium text-gray-900">{colName}</span>
+                                                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{colType}</span>
+                                                </div>
+                                                
+                                                {/* Date Formatting */}
+                                                {colType === 'date' && formatting.type === 'date' && (
+                                                    <select 
+                                                        className="w-full text-xs border-gray-300 rounded"
+                                                        value={formatting.config.format}
+                                                        onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                            type: 'date',
+                                                            config: { format: e.target.value as any }
+                                                        })}
+                                                    >
+                                                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                                                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                                                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                                                        <option value="MMM DD, YYYY">MMM DD, YYYY</option>
+                                                        <option value="MMMM DD, YYYY">MMMM DD, YYYY</option>
+                                                        <option value="relative">Relative (e.g., "2 days ago")</option>
+                                                        <option value="iso">ISO 8601</option>
+                                                    </select>
+                                                )}
+                                                
+                                                {/* Number Formatting */}
+                                                {colType === 'number' && formatting.type === 'number' && (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Decimals</label>
+                                                            <input 
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.decimalPlaces}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'number',
+                                                                    config: { ...formatting.config, decimalPlaces: parseInt(e.target.value) || 0 }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-end">
+                                                            <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={formatting.config.thousandSeparator}
+                                                                    onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                        type: 'number',
+                                                                        config: { ...formatting.config, thousandSeparator: e.target.checked }
+                                                                    })}
+                                                                    className="rounded text-blue-600"
+                                                                />
+                                                                <span>Thousands</span>
+                                                            </label>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Prefix</label>
+                                                            <input 
+                                                                type="text"
+                                                                placeholder="e.g., #"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.prefix || ''}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'number',
+                                                                    config: { ...formatting.config, prefix: e.target.value }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Suffix</label>
+                                                            <input 
+                                                                type="text"
+                                                                placeholder="e.g., %"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.suffix || ''}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'number',
+                                                                    config: { ...formatting.config, suffix: e.target.value }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Currency Formatting */}
+                                                {colType === 'currency' && formatting.type === 'currency' && (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Symbol</label>
+                                                            <input 
+                                                                type="text"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.symbol}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'currency',
+                                                                    config: { ...formatting.config, symbol: e.target.value }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Position</label>
+                                                            <select 
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.symbolPosition}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'currency',
+                                                                    config: { ...formatting.config, symbolPosition: e.target.value as 'before' | 'after' }
+                                                                })}
+                                                            >
+                                                                <option value="before">Before</option>
+                                                                <option value="after">After</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Decimals</label>
+                                                            <input 
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.decimalPlaces}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'currency',
+                                                                    config: { ...formatting.config, decimalPlaces: parseInt(e.target.value) || 0 }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-end">
+                                                            <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={formatting.config.thousandSeparator}
+                                                                    onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                        type: 'currency',
+                                                                        config: { ...formatting.config, thousandSeparator: e.target.checked }
+                                                                    })}
+                                                                    className="rounded text-blue-600"
+                                                                />
+                                                                <span>Thousands</span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Boolean Formatting */}
+                                                {colType === 'boolean' && formatting.type === 'boolean' && (
+                                                    <select 
+                                                        className="w-full text-xs border-gray-300 rounded"
+                                                        value={formatting.config.style}
+                                                        onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                            type: 'boolean',
+                                                            config: { style: e.target.value as any }
+                                                        })}
+                                                    >
+                                                        <option value="true/false">true / false</option>
+                                                        <option value="yes/no">Yes / No</option>
+                                                        <option value="1/0">1 / 0</option>
+                                                        <option value="check/x">✓ / ✗</option>
+                                                        <option value="enabled/disabled">Enabled / Disabled</option>
+                                                    </select>
+                                                )}
+                                                
+                                                {/* String Formatting */}
+                                                {colType === 'string' && formatting.type === 'string' && (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Case</label>
+                                                            <select 
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.case || 'none'}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'string',
+                                                                    config: { ...formatting.config, case: e.target.value as any }
+                                                                })}
+                                                            >
+                                                                <option value="none">No Change</option>
+                                                                <option value="uppercase">UPPERCASE</option>
+                                                                <option value="lowercase">lowercase</option>
+                                                                <option value="capitalize">Capitalize</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500">Max Length</label>
+                                                            <input 
+                                                                type="number"
+                                                                min="0"
+                                                                placeholder="No limit"
+                                                                className="w-full text-xs border-gray-300 rounded"
+                                                                value={formatting.config.truncate || ''}
+                                                                onChange={(e) => updateColumnFormatting(col.tableId, col.columnId, {
+                                                                    type: 'string',
+                                                                    config: { ...formatting.config, truncate: e.target.value ? parseInt(e.target.value) : undefined }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
                     </div>

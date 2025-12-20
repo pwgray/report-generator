@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { DataSource, ReportConfig } from '../types';
+import { DataSource, ReportConfig, FormattingConfig } from '../types';
 import { generateReportData } from '../services/geminiService';
 import { fetchTableData } from '../services/datasourceService';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Button, Card } from './UIComponents';
 import { ArrowLeft, RefreshCw, Calendar, Download } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import * as XLSX from 'xlsx';
 
 interface ReportViewerProps {
@@ -217,6 +217,128 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
       return simpleName || fieldName;
   };
 
+  const getFormattingForField = (fieldName: string): FormattingConfig | undefined => {
+      if (!fieldName) return undefined;
+      const simpleName = fieldName.includes('.') ? fieldName.split('.').pop() as string : fieldName;
+      
+      // Find the formatting configuration from report.selectedColumns
+      const reportCol = report.selectedColumns?.find(rc => rc.columnId === simpleName || rc.columnId === fieldName);
+      return reportCol?.formatting;
+  };
+
+  const formatValue = (value: any, fieldName: string): string => {
+      if (value === null || value === undefined) return '';
+      
+      const formatting = getFormattingForField(fieldName);
+      if (!formatting || formatting.type === 'none') {
+          return typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+
+      try {
+          switch (formatting.type) {
+              case 'date':
+                  const dateVal = typeof value === 'string' ? parseISO(value) : new Date(value);
+                  if (isNaN(dateVal.getTime())) return String(value);
+                  
+                  switch (formatting.config.format) {
+                      case 'MM/DD/YYYY':
+                          return format(dateVal, 'MM/dd/yyyy');
+                      case 'DD/MM/YYYY':
+                          return format(dateVal, 'dd/MM/yyyy');
+                      case 'YYYY-MM-DD':
+                          return format(dateVal, 'yyyy-MM-dd');
+                      case 'MMM DD, YYYY':
+                          return format(dateVal, 'MMM dd, yyyy');
+                      case 'MMMM DD, YYYY':
+                          return format(dateVal, 'MMMM dd, yyyy');
+                      case 'relative':
+                          return formatDistanceToNow(dateVal, { addSuffix: true });
+                      case 'iso':
+                          return dateVal.toISOString();
+                      default:
+                          return format(dateVal, 'MM/dd/yyyy');
+                  }
+
+              case 'number':
+                  const numVal = typeof value === 'string' ? parseFloat(value) : value;
+                  if (isNaN(numVal)) return String(value);
+                  
+                  let formatted = numVal.toFixed(formatting.config.decimalPlaces);
+                  if (formatting.config.thousandSeparator) {
+                      const parts = formatted.split('.');
+                      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                      formatted = parts.join('.');
+                  }
+                  return `${formatting.config.prefix || ''}${formatted}${formatting.config.suffix || ''}`;
+
+              case 'currency':
+                  const currVal = typeof value === 'string' ? parseFloat(value) : value;
+                  if (isNaN(currVal)) return String(value);
+                  
+                  let currFormatted = currVal.toFixed(formatting.config.decimalPlaces);
+                  if (formatting.config.thousandSeparator) {
+                      const parts = currFormatted.split('.');
+                      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                      currFormatted = parts.join('.');
+                  }
+                  return formatting.config.symbolPosition === 'before' 
+                      ? `${formatting.config.symbol}${currFormatted}`
+                      : `${currFormatted}${formatting.config.symbol}`;
+
+              case 'boolean':
+                  const boolVal = typeof value === 'string' 
+                      ? value.toLowerCase() === 'true' || value === '1'
+                      : Boolean(value);
+                  
+                  switch (formatting.config.style) {
+                      case 'true/false':
+                          return boolVal ? 'true' : 'false';
+                      case 'yes/no':
+                          return boolVal ? 'Yes' : 'No';
+                      case '1/0':
+                          return boolVal ? '1' : '0';
+                      case 'check/x':
+                          return boolVal ? '✓' : '✗';
+                      case 'enabled/disabled':
+                          return boolVal ? 'Enabled' : 'Disabled';
+                      default:
+                          return String(boolVal);
+                  }
+
+              case 'string':
+                  let strVal = String(value);
+                  
+                  if (formatting.config.case) {
+                      switch (formatting.config.case) {
+                          case 'uppercase':
+                              strVal = strVal.toUpperCase();
+                              break;
+                          case 'lowercase':
+                              strVal = strVal.toLowerCase();
+                              break;
+                          case 'capitalize':
+                              strVal = strVal.split(' ').map(word => 
+                                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                              ).join(' ');
+                              break;
+                      }
+                  }
+                  
+                  if (formatting.config.truncate && strVal.length > formatting.config.truncate) {
+                      strVal = strVal.substring(0, formatting.config.truncate) + '...';
+                  }
+                  
+                  return strVal;
+
+              default:
+                  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+          }
+      } catch (error) {
+          console.error('[ReportViewer] Error formatting value:', error, { value, formatting });
+          return typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+  };
+
   const numericKey = getNumericKey();
   const labelKey = getLabelKey();
 
@@ -231,20 +353,14 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
     }
 
     try {
-      // Prepare data with human-friendly column names
+      // Prepare data with human-friendly column names and formatting
       const exportData = data.map(row => {
         const formattedRow: any = {};
         Object.keys(row).forEach(key => {
           const alias = getAliasForField(key);
           const value = row[key];
-          // Handle different data types
-          if (typeof value === 'object' && value !== null) {
-            formattedRow[alias] = JSON.stringify(value);
-          } else if (value === null || value === undefined) {
-            formattedRow[alias] = '';
-          } else {
-            formattedRow[alias] = value;
-          }
+          // Use formatValue to apply formatting configuration
+          formattedRow[alias] = formatValue(value, key);
         });
         return formattedRow;
       });
@@ -458,9 +574,9 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report, dataSource, 
                           <tbody className="bg-white divide-y divide-gray-200">
                               {data.map((row, idx) => (
                                   <tr key={idx} className="hover:bg-gray-50">
-                                      {Object.values(row).map((val: any, i) => (
+                                      {Object.entries(row).map(([key, val]: [string, any], i) => (
                                           <td key={i} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                              {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                                              {formatValue(val, key)}
                                           </td>
                                       ))}
                                   </tr>

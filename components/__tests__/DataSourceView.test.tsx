@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '../../tests/utils';
+import { render, screen, waitFor } from '../../tests/utils';
 import userEvent from '@testing-library/user-event';
 import { DataSourceView } from '../DataSourceView';
 import { DataSource } from '../../types';
@@ -223,6 +223,509 @@ describe('DataSourceView', () => {
       
       expect(screen.queryByText('New Data Source')).not.toBeInTheDocument();
       expect(screen.getByText('Data Sources')).toBeInTheDocument();
+    });
+  });
+
+  describe('Connection Details Tab', () => {
+    it('displays connection form for SQL databases', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      // Check for placeholders instead of labels since Input component might not have proper htmlFor
+      expect(screen.getByPlaceholderText('localhost')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('user')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('my_database')).toBeInTheDocument();
+    });
+
+    it('allows entering connection details', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      const hostInput = screen.getByPlaceholderText('localhost');
+      const portInput = screen.getByPlaceholderText('5432');
+      const dbInput = screen.getByPlaceholderText('my_database');
+
+      await user.clear(hostInput);
+      await user.type(hostInput, 'myserver.com');
+      await user.clear(portInput);
+      await user.type(portInput, '5433');
+      await user.clear(dbInput);
+      await user.type(dbInput, 'mydb');
+
+      expect(hostInput).toHaveValue('myserver.com');
+      expect(portInput).toHaveValue('5433');
+      expect(dbInput).toHaveValue('mydb');
+    });
+
+    it('displays test connection button', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      expect(screen.getByText('Test Connection & Fetch Schema')).toBeInTheDocument();
+    });
+
+    it('allows selecting different database types', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      const typeSelect = screen.getByRole('combobox');
+      expect(typeSelect).toHaveValue('sql');
+
+      await user.selectOptions(typeSelect, 'postgres');
+      expect(typeSelect).toHaveValue('postgres');
+    });
+
+    it('shows custom/AI form for custom type', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      const typeSelect = screen.getByRole('combobox');
+      await user.selectOptions(typeSelect, 'custom');
+
+      expect(screen.getByText(/describe the data you want to simulate/i)).toBeInTheDocument();
+      expect(screen.getByText('Generate Schema')).toBeInTheDocument();
+    });
+  });
+
+  describe('Schema Tab', () => {
+    it('displays schema tab navigation', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      expect(screen.getByText('Connection Details')).toBeInTheDocument();
+      expect(screen.getByText('Schema & Metadata')).toBeInTheDocument();
+    });
+
+    it('switches to schema tab when clicked', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      // Check for schema-specific content  
+      await waitFor(() => {
+        // Tables should be shown
+        expect(screen.getByText('users')).toBeInTheDocument();
+      });
+    });
+
+    it('displays tables when schema is available', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      expect(screen.getByText('users')).toBeInTheDocument();
+    });
+
+    it('allows expanding table to see columns', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      const tableHeader = screen.getByText('users');
+      await user.click(tableHeader);
+
+      expect(screen.getByText('id')).toBeInTheDocument();
+      expect(screen.getByText('name')).toBeInTheDocument();
+    });
+
+    it('allows editing table alias', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      const aliasInput = screen.getByPlaceholderText('Friendly Alias');
+      await user.type(aliasInput, 'User Table');
+
+      expect(aliasInput).toHaveValue('User Table');
+    });
+
+    it('allows toggling table exposure', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      const exposedButton = screen.getByText('Exposed');
+      expect(exposedButton).toBeInTheDocument();
+
+      await user.click(exposedButton);
+
+      expect(screen.getByText('Hidden')).toBeInTheDocument();
+    });
+
+    it('displays views section when views exist', async () => {
+      const user = userEvent.setup();
+      const dsWithViews: DataSource = {
+        ...mockDataSources[0],
+        views: [
+          {
+            id: 'v1',
+            name: 'user_summary',
+            exposed: true,
+            columns: [{ id: 'vc1', name: 'total', type: 'integer' }]
+          }
+        ]
+      };
+
+      render(
+        <DataSourceView
+          dataSources={[dsWithViews]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      expect(screen.getByText(/Views \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText('user_summary')).toBeInTheDocument();
+    });
+
+    it('shows VIEW badge for views', async () => {
+      const user = userEvent.setup();
+      const dsWithViews: DataSource = {
+        ...mockDataSources[0],
+        views: [
+          {
+            id: 'v1',
+            name: 'user_summary',
+            exposed: true,
+            columns: []
+          }
+        ]
+      };
+
+      render(
+        <DataSourceView
+          dataSources={[dsWithViews]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      expect(screen.getByText('VIEW')).toBeInTheDocument();
+    });
+
+    it('allows editing view metadata', async () => {
+      const user = userEvent.setup();
+      const dsWithViews: DataSource = {
+        ...mockDataSources[0],
+        views: [
+          {
+            id: 'v1',
+            name: 'user_summary',
+            exposed: true,
+            columns: [{ id: 'vc1', name: 'total', type: 'integer' }]
+          }
+        ]
+      };
+
+      render(
+        <DataSourceView
+          dataSources={[dsWithViews]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const schemaTab = screen.getByText('Schema & Metadata');
+      await user.click(schemaTab);
+
+      // Expand the view
+      const viewHeader = screen.getByText('user_summary');
+      await user.click(viewHeader);
+
+      const aliasInputs = screen.getAllByPlaceholderText('Friendly Alias');
+      const viewAliasInput = aliasInputs[aliasInputs.length - 1];
+      await user.type(viewAliasInput, 'Summary View');
+
+      expect(viewAliasInput).toHaveValue('Summary View');
+    });
+  });
+
+  describe('Save Functionality', () => {
+    it('shows save button', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      expect(screen.getByText('Save Configuration')).toBeInTheDocument();
+    });
+
+    it('calls onAdd when saving new data source', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={[]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      await user.click(screen.getByText('Connect New Source'));
+
+      const nameInput = screen.getByPlaceholderText('e.g., Sales DB');
+      await user.type(nameInput, 'New Database');
+
+      const saveButton = screen.getByText('Save Configuration');
+      await user.click(saveButton);
+
+      expect(mockOnAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'New Database'
+        })
+      );
+    });
+
+    it('calls onUpdate when saving existing data source', async () => {
+      const user = userEvent.setup();
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      const editButtons = screen.getAllByTitle('Edit');
+      await user.click(editButtons[0]);
+
+      const nameInput = screen.getByDisplayValue('Test Database');
+      await user.clear(nameInput);
+      await user.type(nameInput, 'Updated Database');
+
+      const saveButton = screen.getByText('Save Configuration');
+      await user.click(saveButton);
+
+      expect(mockOnUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Updated Database'
+        })
+      );
+    });
+  });
+
+  describe('Read-only Mode', () => {
+    it('hides edit buttons in read-only mode', () => {
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+          isReadOnly={true}
+        />
+      );
+
+      const editButtons = screen.queryAllByTitle('Edit');
+      expect(editButtons.length).toBe(0);
+    });
+
+    it('hides delete buttons in read-only mode', () => {
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+          isReadOnly={true}
+        />
+      );
+
+      const deleteButtons = screen.queryAllByTitle('Delete');
+      expect(deleteButtons.length).toBe(0);
+    });
+  });
+
+  describe('Data Source Types', () => {
+    it('displays connection string for SQL databases', () => {
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      expect(screen.getByText(/user@localhost:5432\/testdb/i)).toBeInTheDocument();
+    });
+
+    it('shows correct type badge', () => {
+      render(
+        <DataSourceView
+          dataSources={mockDataSources}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      expect(screen.getByText('POSTGRES')).toBeInTheDocument();
+    });
+
+    it('displays view count when views exist', () => {
+      const dsWithViews: DataSource = {
+        ...mockDataSources[0],
+        views: [
+          {
+            id: 'v1',
+            name: 'view1',
+            exposed: true,
+            columns: []
+          }
+        ]
+      };
+
+      render(
+        <DataSourceView
+          dataSources={[dsWithViews]}
+          onAdd={mockOnAdd}
+          onUpdate={mockOnUpdate}
+          onDelete={mockOnDelete}
+        />
+      );
+
+      expect(screen.getByText(/1 Tables, 1 Views/i)).toBeInTheDocument();
     });
   });
 });

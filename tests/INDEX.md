@@ -46,7 +46,21 @@ This testing suite includes comprehensive documentation to help you understand, 
 
 ---
 
-### 4. **Project Summary** → [`../TESTING_COMPLETE.md`](../TESTING_COMPLETE.md)
+### 4. **Feature Testing Guide** → [`FEATURE_TESTING.md`](./FEATURE_TESTING.md) 🎯 **NEW**
+**Read this for end-to-end workflow tests**
+
+- What are feature tests?
+- Feature vs unit tests
+- Writing complete user workflows
+- Permission testing patterns
+- Multi-step workflow examples
+- Best practices for integration testing
+
+**Best for**: Testing complete features, user workflows, integration scenarios
+
+---
+
+### 5. **Project Summary** → [`../TESTING_COMPLETE.md`](../TESTING_COMPLETE.md)
 **Read this to understand the big picture**
 
 - Complete test statistics
@@ -68,12 +82,14 @@ This testing suite includes comprehensive documentation to help you understand, 
 | Run tests | [`README.md`](./README.md#running-tests) |
 | Add a new component test | [`ORGANIZATION.md`](./ORGANIZATION.md#component-test-template) |
 | Add a new service test | [`ORGANIZATION.md`](./ORGANIZATION.md#service-test-template) |
+| Add a feature/workflow test | [`FEATURE_TESTING.md`](./FEATURE_TESTING.md#writing-feature-tests) |
 | Find test examples | Look in `components/__tests__/` or `services/__tests__/` |
 | Debug failing tests | [`ORGANIZATION.md`](./ORGANIZATION.md#debugging-tests) |
 | Check coverage | Run `npm run test:coverage` |
 | See all commands | [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md#-common-commands) |
 | Copy a test template | [`QUICK_REFERENCE.md`](./QUICK_REFERENCE.md#-quick-test-template) |
 | Understand the structure | [`ORGANIZATION.md`](./ORGANIZATION.md#-directory-structure) |
+| Test complete workflows | [`FEATURE_TESTING.md`](./FEATURE_TESTING.md) |
 
 ---
 
@@ -121,11 +137,12 @@ npm test -- --grep "text"   # Run tests matching pattern
 
 ## 📊 Current Statistics
 
-- **Total Tests**: 106
-- **Passing**: 104 (98%)
+- **Total Tests**: 116
+- **Passing**: 114 (98%)
 - **Skipped**: 2 (2%)
-- **Execution Time**: ~7 seconds
+- **Execution Time**: ~7-8 seconds
 - **Coverage**: ~82% overall
+- **Feature Tests**: 10 complete workflows ✨
 
 ---
 
